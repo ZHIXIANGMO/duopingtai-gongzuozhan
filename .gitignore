@@ -1,0 +1,62 @@
+# ---------- 系统 / 编辑器 ----------
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------- 依赖 / 构建产物 ----------
+node_modules/
+dist/
+build/
+out/
+.cache/
+.next/
+.nuxt/
+coverage/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---------- Obsidian ----------
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.trash/
+
+# ---------- 工具 / 会话状态 ----------
+.workbuddy/
+.claude/settings.local.json
+*.tmp
+*.bak
+~$*
+
+# ---------- 敏感信息（切勿入库） ----------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.json
+credentials.json
+
+# ---------- 大文件建议走 Git LFS，而非直接提交 ----------
+# *.psd
+# *.ai
+# *.mp4
+# *.mov
