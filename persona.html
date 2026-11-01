@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="assets/app.css">
 <style>
   /* ---------- 顶部身份条 ---------- */
-  .ps-hero{display:flex;align-items:flex-start;gap:18px;padding:4px 0 22px}
+  .ps-hero{display:flex;align-items:flex-start;gap:18px;padding:4px 0 18px}
   .ps-av{width:76px;height:76px;border-radius:24px;flex:none;display:grid;place-items:center;
     font-size:34px;line-height:1;background:linear-gradient(135deg,#FFE3DC,#FFD1D3);
     box-shadow:inset 0 0 0 1px rgba(255,90,95,.12)}
@@ -27,6 +27,11 @@
   .ps-meter-t{font-size:10px;color:var(--mute);margin-top:6px;text-align:right;
     font-variant-numeric:tabular-nums;white-space:nowrap}
   .ps-meter-t b{color:var(--ink);font-weight:600;font-size:11px}
+
+  /* 一句话说明这页是给谁看的 */
+  .ps-aim{font-size:11px;color:#ABABAB;line-height:1.9;padding:11px 0 0;
+    border-top:1px solid var(--line);margin-bottom:2px}
+  .ps-aim b{color:#7A7A7A;font-weight:600}
 
   .btn{border:0;border-radius:11px;padding:8px 15px;font-size:11.5px;cursor:pointer;
     transition:.16s;background:#F2F2F2;color:var(--ink)}
@@ -67,21 +72,76 @@
     font-family:inherit;color:#5A5A5A;margin-bottom:9px}
   .ps-empty{color:#CFCFCF;font-size:11.5px;line-height:1.8}
 
-  /* ---------- 编辑态 ---------- */
-  .ps-in,.ps-ta{width:100%;border:1px solid var(--line2);border-radius:10px;
-    padding:8px 11px;font-size:12.5px;color:var(--ink);background:#fff;
-    transition:.14s;line-height:1.8;resize:vertical;outline:none}
-  .ps-in:focus,.ps-ta:focus{border-color:#BFBFBF;background:#FDFDFD}
-  .ps-in::placeholder,.ps-ta::placeholder{color:#C9C9C9}
-  .ps-in{height:36px}
-  .ps-ta{min-height:72px;font-family:inherit;resize:vertical;line-height:1.8}
-  .ps-ta.tall{min-height:112px}
-  .ps-hint{font-size:9.5px;color:#C0C0C0;margin-top:5px;line-height:1.7}
+  /* ---------- 每块自己的编辑钮 ---------- */
+  .ps-sh span{margin-left:auto}
+  .ps-ed{flex:none;align-self:center;display:inline-flex;align-items:center;gap:5px;
+    border:1px solid var(--line2);background:#fff;color:#9A9A9A;font-size:10.5px;
+    padding:5px 11px;border-radius:9px;cursor:pointer;transition:.15s;line-height:1}
+  .ps-ed svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
+  .ps-ed:hover{color:var(--ink);border-color:#D8D8D8;background:#FAFAFA}
 
-  /* 编辑时底部固定条 */
-  .ps-bar{position:sticky;bottom:0;margin-top:18px;padding:13px 0 3px;background:#fff;
-    display:flex;align-items:center;gap:10px;border-top:1px solid var(--line)}
-  .ps-bar .who{font-size:11px;color:var(--mute);margin-right:auto}
+  /* ---------- 弹窗 ---------- */
+  .ps-mask{position:fixed;inset:0;z-index:90;background:rgba(18,18,18,.26);
+    display:flex;align-items:center;justify-content:center;padding:26px;
+    opacity:0;pointer-events:none;transition:opacity .16s}
+  .ps-mask.on{opacity:1;pointer-events:auto}
+  .ps-modal{width:100%;max-width:560px;max-height:calc(100vh - 90px);background:#fff;
+    border-radius:22px;box-shadow:0 28px 76px rgba(0,0,0,.2),0 2px 8px rgba(0,0,0,.04);
+    display:flex;flex-direction:column;overflow:hidden;
+    transform:translateY(10px) scale(.994);transition:transform .18s ease}
+  .ps-mask.on .ps-modal{transform:none}
+
+  .pm-h{display:flex;align-items:flex-start;gap:14px;padding:20px 22px 13px}
+  .pm-h .tt{flex:1;min-width:0}
+  .pm-t{font-size:15px;font-weight:600;letter-spacing:-.1px;display:flex;align-items:center;gap:7px}
+  .pm-d{font-size:10.5px;color:#A0A0A0;line-height:1.75;margin-top:5px}
+  .pm-x{flex:none;width:28px;height:28px;border-radius:9px;border:0;background:#F4F4F4;
+    color:#8C8C8C;cursor:pointer;font-size:13px;line-height:1;transition:.15s}
+  .pm-x:hover{background:#ECECEC;color:var(--ink)}
+
+  .pm-b{overflow:auto;padding:2px 22px 8px;flex:1}
+
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:15px 16px;padding:4px 0 6px}
+  .fl{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .fl.span2{grid-column:span 2}
+  .fl-t{font-size:10.5px;color:#8E8E8E;letter-spacing:.2px}
+  .fi{width:100%;border:1px solid var(--line2);border-radius:11px;padding:9px 12px;
+    font-size:12.5px;color:var(--ink);background:#fff;line-height:1.75;outline:none;
+    transition:.14s;font-family:inherit}
+  .fi:focus{border-color:#C9C9C9;background:#FDFDFD;box-shadow:0 0 0 3px rgba(255,90,95,.06)}
+  .fi::placeholder{color:#C9C9C9;font-size:11.5px}
+  .ft{min-height:92px;resize:vertical}
+  .ft.tall{min-height:136px}
+  .fl-hint{display:block;font-style:normal;font-size:9.5px;color:#BEBEBE;
+    line-height:1.7;margin-top:3px;font-weight:400}
+
+  /* 标签行：标题在左，读文件在右 */
+  .fl-t{display:flex;align-items:center;gap:8px;font-size:10.5px;color:#8E8E8E;
+    letter-spacing:.2px}
+  .fl-up{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:4px;
+    border:0;background:none;padding:2px 0;cursor:pointer;transition:.15s;
+    font-size:10px;color:#B0B0B0;line-height:1}
+  .fl-up svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round}
+  .fl-up:hover{color:var(--accent)}
+
+  /* 从文件读进来之后的那条小回执 */
+  .fl-got{display:flex;align-items:center;gap:7px;font-size:10px;color:#8C8C8C;
+    background:#FAFAFA;border:1px solid var(--line);border-radius:9px;
+    padding:7px 11px;line-height:1.6}
+  .fl-got b{color:#4A4A4A;font-weight:600}
+  .fl-got .undo{margin-left:auto;flex:none;border:0;background:none;padding:0;
+    cursor:pointer;font-size:10px;color:var(--accent)}
+  .fl-got .undo:hover{text-decoration:underline}
+
+  /* 文件拖到文本框上方时 */
+  .fi.drop{border-color:var(--accent);background:#FFFCFC;
+    box-shadow:0 0 0 3px rgba(255,90,95,.08)}
+
+  .pm-f{display:flex;align-items:center;gap:9px;padding:14px 22px 18px;
+    border-top:1px solid var(--line);background:#fff}
+  .pm-f .note{flex:1;min-width:0;font-size:10px;color:#C0C0C0;line-height:1.65}
 
   /* ---------- 底部的号 ---------- */
   .ps-accs{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
@@ -101,6 +161,10 @@
     .ps-side{width:100%;flex-direction:row;justify-content:space-between;align-items:center}
     .ps-row,.ps-row.s,.ps-row.m{grid-column:span 12;flex-direction:column;gap:6px}
     .ps-lab{width:auto}
+    .ps-mask{padding:14px;align-items:flex-end}
+    .ps-modal{max-height:88vh;border-radius:20px}
+    .fgrid{grid-template-columns:1fr}
+    .fl.span2{grid-column:span 1}
   }
 </style>
 </head>
@@ -122,21 +186,24 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
+<div class="ps-mask" id="mask"><div class="ps-modal" id="modal"></div></div>
+<input type="file" id="filePick" hidden
+  accept=".md,.markdown,.txt,.text,.csv,.tsv,.json,.yml,.yaml,.log,.org,.rst,.html">
 
 <script src="assets/app.js"></script>
 <script>
 let V = null;          // /api/persona 返回
-let EDIT = false;
+let OPEN = -1;         // 当前打开的是第几块
 
 /* 页面结构。短字段用 f，正文小节用 s。 */
 const BLOCKS = [
   {
     标题: '基础信息',
-    说明: '名片、封面、AI 称呼你的方式，都从这儿来',
+    说明: '名片、封面、AI 称呼这个人的方式，都从这儿来',
     项: [
       {f:'头像', 标签:'头像', 占:'s', 提示:'一个 emoji，比如 🍊。也可以只写一个字'},
       {f:'名称', 标签:'名字', 占:'s', 提示:'别人在评论区看到的那个名字'},
-      {f:'一句话', 标签:'一句话', 占:'m', 提示:'20 字内。别人一眼知道你是谁'},
+      {f:'一句话', 标签:'一句话', 占:'l', 提示:'20 字内。别人一眼知道这是谁'},
       {f:'年龄', 标签:'年龄', 占:'s', 提示:'可以不填'},
       {f:'生日', 标签:'生日', 占:'s', 提示:'YYYY-MM-DD，可以不填'}
     ]
@@ -146,30 +213,30 @@ const BLOCKS = [
     重点: true,
     说明: '这一段决定 AI 会不会写跑偏。空着，它就只能靠自己猜',
     项: [
-      {f:'定位', 标签:'这个号是谁', 占:'m', 提示:'一句话。例如「AI × 个人知识管理」'},
-      {f:'领域', 标签:'涉及哪些领域', 占:'m', 提示:'逗号分隔，三到五个就够'},
+      {f:'定位', 标签:'这个号是谁', 占:'l', 提示:'一句话。例如「AI × 个人知识管理」'},
+      {f:'领域', 标签:'涉及哪些领域', 占:'l', 提示:'逗号分隔，三到五个就够'},
       {f:'读者', 标签:'写给谁', 占:'l', 提示:'越具体越好。别写「所有人」'},
-      {s:'这个人是谁', 标签:'自述', 提示:'第一人称写：你在哪、平时干什么、为什么开这个号。不要写「热爱分享」这种谁都能说的话'},
+      {s:'这个人是谁', 标签:'自述', 提示:'第一人称写：在哪、平时干什么、为什么开这个号。不要写「热爱分享」这种谁都能说的话'},
       {s:'要传递什么', 标签:'想传递什么', 提示:'如果读者只记住一件事，是什么？要写成能被反驳的判断，不是「知识改变命运」这种空话'}
     ]
   },
   {
     标题: '说话方式',
-    说明: 'AI 写完一段会拿这里自查。写得越具体，它越像你',
+    说明: 'AI 写完一段会拿这里自查。写得越具体，它越像这个人',
     项: [
-      {f:'语气', 标签:'语气', 占:'m', 提示:'三到五个词，例如「克制、平实、短句」'},
+      {f:'语气', 标签:'语气', 占:'l', 提示:'三到五个词，例如「克制、平实、短句」'},
       {s:'说话方式', 标签:'具体怎么说', 提示:'爱用什么句式、习惯用什么类比、避开哪些词'},
-      {s:'模仿样例', 标签:'照着这个口气', 提示:'正面贴一段你自己觉得最像你的文字；反面贴一段你不想要的腔调'}
+      {s:'模仿样例', 标签:'照着这个口气', 提示:'正面贴一段最像这个人的文字；反面贴一段不想要的腔调'}
     ]
   },
   {
     标题: '写作习惯',
     说明: '结构上的偏好：锚句、比喻、开头、段落长度',
-    项: [{s:'写作习惯', 标签:'你的写法'}]
+    项: [{s:'写作习惯', 标签:'写法'}]
   },
   {
     标题: '视觉与设计风格',
-    说明: '现在只影响你自己排版，以后会喂给 AI 做封面和配图',
+    说明: '现在只影响排版，以后会喂给 AI 做封面和配图',
     项: [{s:'视觉与设计风格', 标签:'视觉调性',
           提示:'配图用截图还是插画、色调偏冷还是偏暖、版面偏密还是偏疏、有没有固定的字体和封面模板'}]
   },
@@ -229,6 +296,10 @@ function mdLite(t){
 /* ---------------- 渲染 ---------------- */
 function identId(){ return (V && V['人设'] && V['人设'].id) || ''; }
 function isCurrent(){ return localStorage.getItem('当前身份') === identId(); }
+function shortVal(key){ return (V['人设'] || {})[key] || ''; }
+function secVal(key){ return (V['小节内容'] || {})[key] || ''; }
+
+const PENCIL = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>';
 
 function renderHero(){
   const p = V['人设'] || {};
@@ -259,26 +330,11 @@ function renderHero(){
           <div class="ps-meter-bar"><i style="width:${pct}%"></i></div>
           <div class="ps-meter-t">人设完整度 <b>${pct}%</b></div>
         </div>
-        ${EDIT
-          ? '<button class="btn" id="btnCancel">取消</button>'
-          : `<button class="btn pri" id="btnEdit">编辑</button>`}
-        ${!isCurrent() && !EDIT ? '<button class="btn" id="btnSet">设为当前</button>' : ''}
+        ${!isCurrent() ? '<button class="btn" id="btnSet">设为当前</button>' : ''}
       </div>
-    </div>`;
-
-  const be = $('#btnEdit');
-  if(be) be.addEventListener('click', () => {
-    EDIT = true;
-    render();
-    window.scrollTo({top: 0, behavior: 'smooth'});
-  });
-
-  const bc = $('#btnCancel');
-  if(bc) bc.addEventListener('click', () => {
-    if(!confirm('放弃这次修改？')) return;
-    EDIT = false;
-    render();
-  });
+    </div>
+    <div class="ps-aim">这一页写的不是给人看的介绍，<b>是给 AI 读的说明书</b>。
+      写得越具体，它下笔越像这个人；空着的地方，它会先来问你，而不是自己编。</div>`;
 
   const bs = $('#btnSet');
   if(bs) bs.addEventListener('click', () => {
@@ -288,25 +344,13 @@ function renderHero(){
   });
 }
 
-function shortVal(key){ return (V['人设'] || {})[key] || ''; }
-function secVal(key){ return (V['小节内容'] || {})[key] || ''; }
-
-function renderItem(it, blockIdx, itemIdx){
-  const span = it.f ? (it.占 || 'm') : 'block';
+function renderItem(it){
+  const span = it.占 || 'm';
 
   /* 短字段 */
   if(it.f){
     const val = shortVal(it.f);
-    if(EDIT){
-      const ph = it.提示 ? esc(it.提示) : '';
-      return `<div class="ps-row ${span === 'block' ? '' : span}">
-        <div class="ps-lab">${esc(it.标签)}</div>
-        <div class="ps-val">
-          <input class="ps-in" data-f="${esc(it.f)}" value="${esc(val)}" placeholder="${ph}">
-        </div>
-      </div>`;
-    }
-    return `<div class="ps-row ${span === 'block' ? '' : span}">
+    return `<div class="ps-row ${span}">
       <div class="ps-lab">${esc(it.标签)}</div>
       <div class="ps-val ${val ? '' : 'empty'}">${val ? esc(val) : '还没填'}</div>
     </div>`;
@@ -315,16 +359,6 @@ function renderItem(it, blockIdx, itemIdx){
   /* 正文小节 */
   const val = secVal(it.s);
   const blank = !val.trim();
-
-  if(EDIT){
-    return `<div class="ps-row block">
-      <div class="ps-lab">${esc(it.标签)}${blank ? ' <i>空着</i>' : ''}</div>
-      <div style="width:100%">
-        <textarea class="ps-ta ${it.s === '这个人是谁' || it.s === '要传递什么' ? 'tall' : ''}"
-          data-s="${esc(it.s)}" placeholder="${esc(it.提示 || '')}">${esc(val)}</textarea>
-      </div>
-    </div>`;
-  }
 
   return `<div class="ps-row block">
     <div class="ps-lab">${esc(it.标签)}</div>
@@ -337,20 +371,24 @@ function renderItem(it, blockIdx, itemIdx){
 }
 
 function renderBody(){
-  const html = BLOCKS.map((b, bi) => {
+  $('#body').innerHTML = BLOCKS.map((b, bi) => {
     const missing = b.项.filter(it =>
       it.f ? !shortVal(it.f) : !secVal(it.s).trim()).length;
 
     return `
-      <div class="sec-head"><h2>${b.重点 ? '<i class="ps-dot"></i>' : ''}${esc(b.标题)}</h2>
-        <span>${EDIT ? esc(b.说明 || '') : (missing ? missing + ' 处还没填' : '已填齐')}</span>
+      <div class="sec-head ps-sh">
+        <h2>${b.重点 ? '<i class="ps-dot"></i>' : ''}${esc(b.标题)}</h2>
+        <span>${missing ? missing + ' 处还没填' : '已填齐'}</span>
+        <button class="ps-ed" data-b="${bi}">${PENCIL}编辑</button>
       </div>
       <div class="card ps-card${b.重点 ? ' key' : ''}">
-        ${b.项.map((it, ii) => renderItem(it, bi, ii)).join('')}
+        ${b.项.map(renderItem).join('')}
       </div>`;
   }).join('');
 
-  $('#body').innerHTML = html;
+  document.querySelectorAll('.ps-ed').forEach(el => {
+    el.addEventListener('click', () => openEditor(Number(el.dataset.b)));
+  });
 }
 
 function renderFoot(){
@@ -366,62 +404,266 @@ function renderFoot(){
         </a>`).join('')}</div>`
     : `<div class="ps-empty">这个 IP 还没开号。去矩阵页看看。</div>`;
 
-  const bar = EDIT ? `
-    <div class="ps-bar">
-      <div class="who">改完点保存。没填的格子留着不影响，AI 会当成「不知道」来问你</div>
-      <button class="btn" id="btnCancel2">取消</button>
-      <button class="btn pri" id="btnSave">保存</button>
-    </div>` : '';
-
   $('#foot').innerHTML = `
-    ${bar}
     <div class="sec-head"><h2>这个 IP 名下的号</h2><span>${accs.length} 个</span></div>
     ${list}`;
+}
 
-  const bs = $('#btnSave');
-  if(bs) bs.addEventListener('click', save);
+/* ---------------- 弹窗：一次只改一块 ---------------- */
+const SCROLL = document.querySelector('.main');
 
-  const bc2 = $('#btnCancel2');
-  if(bc2) bc2.addEventListener('click', () => {
-    if(!confirm('放弃这次修改？')) return;
-    EDIT = false;
-    render();
+function lockScroll(on){
+  document.body.style.overflow = on ? 'hidden' : '';
+  if(SCROLL) SCROLL.style.overflowY = on ? 'hidden' : '';
+}
+
+const UP_ICON = '<svg viewBox="0 0 24 24"><path d="M12 15V4m0 0L8 8m4-4 4 4"/>' +
+  '<path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>';
+
+function fieldHTML(it, i){
+  if(it.f){
+    const span = it.占 === 's' ? '' : ' span2';
+    return `<label class="fl${span}">
+      <span class="fl-t">${esc(it.标签)}</span>
+      <input class="fi" data-f="${esc(it.f)}" value="${esc(shortVal(it.f))}"
+        placeholder="${esc(it.提示 || '')}">
+    </label>`;
+  }
+  const id = 'ft' + i;
+  const tall = (it.s === '这个人是谁' || it.s === '要传递什么' || it.s === '模仿样例') ? ' tall' : '';
+  return `<div class="fl span2">
+    <div class="fl-t">
+      <label for="${id}">${esc(it.标签)}</label>
+      <button type="button" class="fl-up" data-ta="${id}" title="把一份 .md / .txt 读进这一节">${UP_ICON}读入文件</button>
+    </div>
+    ${it.提示 ? `<i class="fl-hint">${esc(it.提示)}</i>` : ''}
+    <textarea id="${id}" class="fi ft${tall}" data-s="${esc(it.s)}">${esc(secVal(it.s))}</textarea>
+    <div class="fl-got" data-for="${id}" hidden></div>
+  </div>`;
+}
+
+function openEditor(bi){
+  const b = BLOCKS[bi];
+  if(!b) return;
+  OPEN = bi;
+
+  $('#modal').innerHTML = `
+    <div class="pm-h">
+      <div class="tt">
+        <div class="pm-t">${b.重点 ? '<i class="ps-dot"></i>' : ''}${esc(b.标题)}</div>
+        <div class="pm-d">${esc(b.说明 || '')}</div>
+      </div>
+      <button class="pm-x" id="pmX" title="关掉">✕</button>
+    </div>
+    <div class="pm-b"><div class="fgrid">${b.项.map(fieldHTML).join('')}</div></div>
+    <div class="pm-f">
+      <span class="note">${b.项.some(it => it.s)
+        ? '写完点确定，也可以把 .md 文件直接拖进框里。没填的留着不影响，AI 会来问你。'
+        : '写完点确定。没填的格子留着不影响，AI 会当成「不知道」来问你。'}</span>
+      <button class="btn" id="pmCancel">取消</button>
+      <button class="btn pri" id="pmOk">确定</button>
+    </div>`;
+
+  const mask = $('#mask');
+  mask.classList.add('on');
+  lockScroll(true);
+
+  $('#pmX').addEventListener('click', tryClose);
+  $('#pmCancel').addEventListener('click', tryClose);
+  $('#pmOk').addEventListener('click', () => saveBlock(b));
+
+  const first = $('#modal .fi');
+  if(first) setTimeout(() => {
+    first.focus();
+    if(first.tagName === 'TEXTAREA') first.setSelectionRange(first.value.length, first.value.length);
+  }, 80);
+
+  // 文本域跟着内容长，别让人在小窗里滚
+  const grow = el => {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight + 2, 300) + 'px';
+  };
+  document.querySelectorAll('#modal textarea').forEach(el => {
+    grow(el);
+    el.addEventListener('input', () => grow(el));
+
+    // 拖一份文件进来
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drop'));
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      el.classList.remove('drop');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if(f) readInto(el, f);
+    });
+  });
+
+  // 「读入文件」
+  document.querySelectorAll('#modal .fl-up').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      const ta = document.getElementById(btn.dataset.ta);
+      if(!ta) return;
+      PICK = ta;
+      $('#filePick').click();
+    });
   });
 }
 
-/* ---------------- 保存 ---------------- */
-async function save(){
-  const 字段 = {};
-  document.querySelectorAll('[data-f]').forEach(el => 字段[el.dataset.f] = el.value.trim());
+/* ---------------- 从文件读进一个文本框 ---------------- */
+const TEXT_FILE = /\.(md|markdown|txt|text|csv|tsv|json|ya?ml|log|org|rst|html?)$/i;
+let PICK = null;   // 等着接文件的那个 textarea
 
-  const 正文 = (V['小节'] || []).map(name => {
-    const box = document.querySelector('[data-s="' + name + '"]');
-    const val = box ? box.value.trim() : (V['小节内容'][name] || '').trim();
-    return val ? '## ' + name + '\n\n' + val : '## ' + name;
-  }).join('\n\n') + '\n';
+async function readInto(ta, file){
+  if(!TEXT_FILE.test(file.name) && !(file.type || '').startsWith('text/')){
+    toast('只读文本文件：.md / .txt / .csv 这些');
+    return;
+  }
+  let raw = '';
+  try{
+    raw = await file.text();
+  }catch(e){
+    toast('这个文件读不出来');
+    return;
+  }
 
-  const btn = $('#btnSave');
-  btn.disabled = true;
-  btn.textContent = '保存中…';
+  let text = raw.replace(/^\uFEFF/, '');
+  let cutFm = false;
+  const fm = text.match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/);
+  if(fm){ text = text.slice(fm[0].length); cutFm = true; }
+  text = text.replace(/^\s*#\s+.*\r?\n+/, '').trim();
+
+  // 文件里的标题如果原样塞进来，会变成人设文件的新小节 —— 压成加粗行
+  let heads = 0;
+  text = text.split('\n').map(line => {
+    const m = line.match(/^\s{0,3}#{1,6}\s+(.*)$/);
+    if(!m) return line;
+    heads++;
+    return '**' + m[1].trim() + '**';
+  }).join('\n');
+
+  if(!text){ toast('这个文件里没有字'); return; }
+  if(text.indexOf('\uFFFD') >= 0) toast('文件可能不是 UTF-8，读出来会带乱码');
+
+  const before = ta.value;
+  ta.value = text;
+  ta.dispatchEvent(new Event('input', {bubbles:true}));
+
+  const box = document.querySelector('#modal .fl-got[data-for="' + ta.id + '"]');
+  if(!box) return;
+  const n = text.replace(/\s/g, '').length;
+  box.hidden = false;
+  box.innerHTML = `已读入 <b>${esc(file.name)}</b> · ${n} 字` +
+    (cutFm ? ' · 去掉了开头的 frontmatter' : '') +
+    (heads ? ` · ${heads} 个标题行改成了加粗` : '') +
+    (before ? '<button type="button" class="undo">还原</button>' : '');
+  const undo = box.querySelector('.undo');
+  if(undo) undo.addEventListener('click', () => {
+    ta.value = before;
+    ta.dispatchEvent(new Event('input', {bubbles:true}));
+    box.hidden = true;
+    box.innerHTML = '';
+  });
+}
+
+/* 有没有改过东西 */
+function isDirty(b){
+  return b.项.some(it => {
+    const el = it.f ? $('#modal [data-f="' + it.f + '"]') : $('#modal [data-s="' + it.s + '"]');
+    if(!el) return false;
+    const now = el.value.trim();
+    const was = it.f ? (shortVal(it.f) || '').trim() : (secVal(it.s) || '').trim();
+    return now !== was;
+  });
+}
+
+function closeEditor(){
+  OPEN = -1;
+  PICK = null;
+  $('#mask').classList.remove('on');
+  lockScroll(false);
+  setTimeout(() => { if(OPEN === -1) $('#modal').innerHTML = ''; }, 200);
+}
+
+function tryClose(){
+  const b = BLOCKS[OPEN];
+  if(b && isDirty(b) && !confirm('这块改了还没保存，丢掉？')) return;
+  closeEditor();
+}
+
+async function saveBlock(b){
+  const fields = {};
+  b.项.forEach(it => {
+    if(!it.f) return;
+    const el = $('#modal [data-f="' + it.f + '"]');
+    if(!el) return;
+    const v = el.value.trim();
+    if(v !== (shortVal(it.f) || '').trim()) fields[it.f] = v;
+  });
+
+  const secs = [];
+  b.项.forEach(it => {
+    if(!it.s) return;
+    const el = $('#modal [data-s="' + it.s + '"]');
+    if(!el) return;
+    const v = el.value.trim();
+    if(v !== (secVal(it.s) || '').trim()) secs.push([it.s, v]);
+  });
+
+  if(!Object.keys(fields).length && !secs.length){ closeEditor(); return; }
+
+  const ok = $('#pmOk');
+  ok.disabled = true;
+  ok.textContent = '保存中…';
 
   try{
-    const r = await postJSON('/api/write', {
-      kind: '身份', id: identId(), 字段: 字段, 正文: 正文
-    });
-    if(!r.ok) throw new Error(r.error || '保存失败');
-
-    // 保存后重新拉一遍，拿到最新完整度
+    if(Object.keys(fields).length){
+      await postJSON('/api/write', {kind:'身份', id:identId(), 字段: fields});
+    }
+    for(const pair of secs){
+      await postJSON('/api/section', {kind:'身份', id:identId(), 小节: pair[0], 内容: pair[1]});
+    }
     V = await getJSON('/api/persona?id=' + encodeURIComponent(identId()));
-    EDIT = false;
+    const y = SCROLL ? SCROLL.scrollTop : window.scrollY;
+    closeEditor();
     render();
+    if(SCROLL) SCROLL.scrollTop = y; else window.scrollTo({top: y});
     toast('已保存');
-    setTimeout(() => location.reload(), 600);
   }catch(e){
     toast('保存失败：' + e.message);
-    btn.disabled = false;
-    btn.textContent = '保存';
+    ok.disabled = false;
+    ok.textContent = '确定';
   }
 }
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && OPEN >= 0) tryClose();
+  if((e.metaKey || e.ctrlKey) && e.key === 'Enter' && OPEN >= 0){
+    const b = BLOCKS[OPEN];
+    if(b) saveBlock(b);
+  }
+});
+$('#mask').addEventListener('click', e => { if(e.target.id === 'mask') tryClose(); });
+
+/* 选完文件后往哪个框里塞 */
+$('#filePick').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';            // 同一个文件能再选一次
+  const ta = PICK;
+  PICK = null;
+  if(f && ta) await readInto(ta, f);
+});
+
+/* 拖文件进来：别让浏览器把页面换成那个文件 */
+['dragover', 'drop'].forEach(t => window.addEventListener(t, e => e.preventDefault()));
+
+$('#modal').addEventListener('drop', e => {
+  if(e.target.closest('textarea')) return;      // 框上自己有处理
+  const tas = document.querySelectorAll('#modal textarea');
+  if(tas.length !== 1) return;
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f) readInto(tas[0], f);
+});
 
 function render(){
   renderHero();

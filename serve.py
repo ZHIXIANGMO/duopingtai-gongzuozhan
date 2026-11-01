@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sys
 import threading
 import urllib.error
@@ -140,11 +141,98 @@ def save_entity(kind, item_id, fields=None, body=None):
             meta[k] = "" if v is None else str(v)
     if kind == "稿件":
         meta["更新"] = date.today().isoformat()
+    snapshot(path, kind)
     write_md(path, meta, old_body if body is None else body, kind)
 
     fresh, fresh_body = parse_md(path)
     fresh["正文"] = fresh_body
     return fresh
+
+
+# 写盘前先存一份旧文件，改坏了能捞回来。每份最多留 20 个版本。
+SNAP_KEEP = 20
+
+
+def snapshot(path, kind):
+    stem = os.path.splitext(os.path.basename(path))[0]
+    d = os.path.join(DATA, ".历史", kind)
+    try:
+        os.makedirs(d, exist_ok=True)
+        shutil.copyfile(path, os.path.join(
+            d, "%s.%s.md" % (stem, datetime.now().strftime("%Y%m%d-%H%M%S"))))
+        old = sorted(n for n in os.listdir(d) if n.startswith(stem + "."))
+        for n in old[:-SNAP_KEEP]:
+            os.remove(os.path.join(d, n))
+    except OSError:
+        pass  # 备份失败不该挡住保存
+
+
+def rewrite_section(body, section, text):
+    """只替换一个小节，别的小节原样留着。缺这个小节就按固定顺序插进去。"""
+    head, blocks = [], []
+    for line in (body or "").splitlines():
+        if line.startswith("## "):
+            blocks.append([line[3:].strip(), []])
+        elif blocks:
+            blocks[-1][1].append(line)
+        else:
+            head.append(line)
+
+    new_lines = text.strip().splitlines() if text.strip() else [""]
+    hit = False
+    for b in blocks:
+        if b[0] == section:
+            b[1] = new_lines
+            hit = True
+    if not hit:
+        idx = len(blocks)
+        if section in PERSONA_SECTIONS:
+            want = PERSONA_SECTIONS.index(section)
+            for i, b in enumerate(blocks):
+                if b[0] in PERSONA_SECTIONS and PERSONA_SECTIONS.index(b[0]) > want:
+                    idx = i
+                    break
+        blocks.insert(idx, [section, new_lines])
+
+    parts = []
+    lead = "\n".join(head).strip()
+    if lead:
+        parts.append(lead)
+    for name, lines in blocks:
+        chunk = "\n".join(lines).strip()
+        parts.append("## " + name + ("\n\n" + chunk if chunk else ""))
+    return "\n\n".join(parts) + "\n"
+
+
+def flatten_heads(text):
+    """小节内容里的 # 标题会被人设文件当成新小节，压成加粗行保住结构。"""
+    out = []
+    for line in str(text or "").splitlines():
+        m = re.match(r"^\s{0,3}#{1,6}\s+(.*)$", line)
+        out.append("**%s**" % m.group(1).strip() if m and m.group(1).strip() else line)
+    return "\n".join(out)
+
+
+def save_section(kind, item_id, section, text):
+    """人设页按块编辑：一次只动一个小节。"""
+    d = DIRS.get(kind)
+    if not d:
+        raise ValueError("未知的类型：%s" % kind)
+    if not str(section or "").strip():
+        raise ValueError("没说改哪一小节")
+    path = os.path.join(d, "%s.md" % item_id)
+    if not os.path.isfile(path):
+        raise ValueError("找不到文件：%s" % path)
+
+    meta, old_body = parse_md(path)
+    snapshot(path, kind)
+    write_md(path, meta, rewrite_section(old_body, str(section).strip(),
+                                         flatten_heads(text)), kind)
+
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    return fresh
+
 
 
 # ---------------------------------------------------------------- 数字
@@ -940,6 +1028,11 @@ class Handler(SimpleHTTPRequestHandler):
                 p = self._body()
                 item = save_entity(p.get("kind", ""), p.get("id", ""),
                                    p.get("字段") or None, p.get("正文"))
+                return self._json({"ok": True, "item": item})
+            if path == "/api/section":
+                p = self._body()
+                item = save_section(p.get("kind", "身份"), p.get("id", ""),
+                                    p.get("小节", ""), p.get("内容", ""))
                 return self._json({"ok": True, "item": item})
             if path == "/api/ingest":
                 p = self._body()
