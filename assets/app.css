@@ -49,7 +49,7 @@ a{color:inherit;text-decoration:none}
 .nav-item.on .n.hot{color:#FF8A8E}
 
 .side-foot{margin-top:auto;padding-top:16px;position:relative}
-.me{background:#191919;border-radius:var(--r-md);padding:11px 12px;color:#fff;cursor:pointer;
+.me{background:#191919;border-radius:var(--r-md);padding:11px 12px;color:#fff;
   transition:.18s;user-select:none}
 .me:hover{background:#242424}
 .me-top{display:flex;align-items:center;gap:9px}
@@ -57,52 +57,61 @@ a{color:inherit;text-decoration:none}
   font-size:14px;font-weight:600;color:#fff}
 .me-txt{min-width:0;flex:1}
 .me-name{font-size:12.5px;font-weight:600;line-height:1.3;display:flex;align-items:center;gap:4px}
-.me-chev{width:12px;height:12px;stroke:#7E7E7E;fill:none;stroke-width:2.2;stroke-linecap:round;
-  stroke-linejoin:round;flex:none;transition:.2s}
-.me:hover .me-chev{stroke:#fff}
+.me-chev{display:none;width:12px;height:12px;stroke:#7E7E7E;fill:none;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round;flex:none;transition:.2s}
 .me-role{font-size:9.5px;color:#8A8A8A;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .me-stats{display:flex;margin-top:11px;gap:4px}
 .me-stats div{flex:1;min-width:0}
 .me-stats b{display:block;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
 .me-stats span{font-size:9px;color:#7E7E7E;display:block;margin-top:2px;white-space:nowrap}
 
-/* ---------- IP 形象切换面板 ---------- */
-.me-pop{position:absolute;left:0;bottom:calc(100% - 6px);width:332px;background:#fff;
-  border:1px solid var(--line2);border-radius:18px;z-index:90;display:none;
-  box-shadow:0 24px 56px rgba(0,0,0,.15),0 2px 8px rgba(0,0,0,.04);
-  padding:10px 10px 6px;max-height:min(66vh,540px);overflow-y:auto}
-.me-pop.on{display:block;animation:popIn .16s cubic-bezier(.2,.9,.3,1)}
-@keyframes popIn{from{opacity:0;transform:translateY(7px) scale(.986)}to{opacity:1;transform:none}}
-.pop-head{display:flex;align-items:baseline;gap:8px;padding:4px 7px 8px}
-.pop-head span:first-child{font-size:9.5px;letter-spacing:1.3px;color:#C6C6C6}
-.pop-hint{font-size:9.5px;color:#CFCFCF;margin-left:auto}
+/* ---------- IP 卡片栈 ---------- */
+.deck{position:relative;display:flex;flex-direction:column;padding-bottom:3px}
+.dc{height:34px;display:flex;align-items:center;gap:7px;padding:0 9px;
+  background:#F2F2F2;border-radius:11px;cursor:pointer;position:relative;
+  color:#5E5E5E;font-size:11.5px;user-select:none;
+  transition:transform .16s ease, background .16s ease, box-shadow .16s ease}
+.dc + .dc{margin-top:-7px}
+/* 上一张卡底部留一条白缝，叠起来才看得出层 */
+.dc{border-bottom:2px solid #fff}
+.dc:hover{background:#fff;transform:translateX(5px);z-index:4;
+  box-shadow:0 7px 20px rgba(0,0,0,.10)}
+.dc.on{background:var(--accent-soft);color:var(--ink)}
+.dc.on:hover{background:#FFE1E3}
+.dc-av{width:20px;height:20px;border-radius:6px;flex:none;display:grid;place-items:center;
+  font-size:9.5px;color:#fff;font-weight:600}
+.dc-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-n{font-size:9px;color:#B4B4B4}
+.dc-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none;
+  box-shadow:0 0 0 3px rgba(255,90,95,.16)}
+.dc-empty{font-size:10px;color:#C8C8C8;padding:6px 8px}
 
-.id{border-radius:12px;transition:.16s}
-.id:hover{background:#FAFAFA}
-.id-top{display:flex;align-items:center;gap:9px;padding:8px;cursor:pointer;border-radius:12px}
-.id.on .id-top{background:#F5F5F5}
-.id-av{width:28px;height:28px;border-radius:9px;flex:none;display:grid;place-items:center;
+/* 悬停浮出的详情卡 */
+.deck-info{position:fixed;width:250px;background:#fff;border:1px solid var(--line2);
+  border-radius:16px;padding:12px 12px 9px;z-index:120;
+  box-shadow:0 22px 48px rgba(0,0,0,.14),0 2px 8px rgba(0,0,0,.04);
+  opacity:0;transform:translateX(-7px);pointer-events:none;
+  transition:opacity .15s ease, transform .15s ease}
+.deck-info.on{opacity:1;transform:none;pointer-events:auto}
+.di-head{display:flex;align-items:center;gap:9px;padding-bottom:10px}
+.di-av{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;
   color:#fff;font-size:12px;font-weight:600}
-.id-txt{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
-.id-name{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.2}
-.id-pos{font-size:9.5px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.id-tag{font-size:9px;color:#B0B0B0;background:#F4F4F4;border-radius:6px;padding:1.5px 6px;flex:none;letter-spacing:.2px}
-.id-tag.now{color:#fff;background:var(--accent)}
-.id-arrow{width:13px;height:13px;stroke:#C8C8C8;fill:none;stroke-width:2;stroke-linecap:round;
-  stroke-linejoin:round;flex:none;transition:.2s}
-.id.on .id-arrow{transform:rotate(180deg);stroke:var(--ink)}
-.id-plats{max-height:0;overflow:hidden;transition:max-height .24s ease}
-.id.on .id-plats{max-height:340px}
-.pl{display:flex;align-items:center;gap:7px;padding:6px 8px 6px 21px;border-radius:9px;font-size:11.5px}
-.pl:hover{background:#F2F2F2}
-.pl-bar{width:3px;height:12px;border-radius:2px;flex:none;opacity:.5}
-.pl-plat{color:#909090;font-size:10px;flex:none;min-width:38px}
-.pl-name{color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pl-n{font-size:9.5px;color:#C4C4C4;font-variant-numeric:tabular-nums}
-.pl-empty{font-size:10.5px;color:#C8C8C8;padding:3px 8px 8px 21px}
-.pop-add{display:block;font-size:10.5px;color:var(--mute);padding:9px 8px 5px;margin-top:4px;
-  border-top:1px solid var(--line);text-align:center;border-radius:0 0 12px 12px}
-.pop-add:hover{color:var(--ink)}
+.di-tt{min-width:0}
+.di-name{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px}
+.di-on{font-style:normal;font-size:8.5px;color:var(--accent);background:var(--accent-soft);
+  border-radius:5px;padding:1px 5px;font-weight:500}
+.di-pos{font-size:10px;color:var(--mute);margin-top:2px}
+.di-sec{font-size:9px;letter-spacing:1.2px;color:#C6C6C6;padding:5px 2px 4px;
+  border-top:1px solid var(--line)}
+.di-pl{display:flex;align-items:center;gap:7px;padding:5px 4px;border-radius:8px;font-size:11px}
+.di-pl:hover{background:#F6F6F6}
+.di-bar{width:3px;height:11px;border-radius:2px;flex:none;opacity:.55}
+.di-plat{color:#909090;font-size:9.5px;flex:none;min-width:36px}
+.di-pname{color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.di-pn{font-size:9px;color:#C0C0C0;font-variant-numeric:tabular-nums}
+.di-empty{font-size:10px;color:#C8C8C8;padding:4px}
+.di-foot{font-size:9.5px;color:#BEBEBE;border-top:1px solid var(--line);
+  margin-top:6px;padding-top:7px;text-align:center}
 
 /* ---------- 主区 ---------- */
 .main{flex:1;min-width:0;overflow-y:auto;padding:18px 28px 40px}
@@ -373,11 +382,25 @@ table.tb tr:hover td{background:#FCFCFC}
   .nav{flex-direction:row;gap:3px;flex:none}
   .nav-label{display:none}
   .side-foot{display:flex;margin:0 0 0 auto;padding:0;flex:none}
-  .me{padding:5px;border-radius:11px;display:block;flex:none}
+  .me{padding:5px 9px 5px 5px;border-radius:11px;display:flex;align-items:center;gap:5px;
+    flex:none;cursor:pointer}
   .me-top{gap:0}
-  .me-txt,.me-stats,.me-role,.me-chev{display:none}
+  .me-txt,.me-stats,.me-role{display:none}
   .me-av{width:26px;height:26px;font-size:12px}
-  .me-pop{position:fixed;left:10px;right:10px;bottom:10px;width:auto;max-height:56vh}
+  /* 头像右侧一个小三角，暗示点开有东西 */
+  .me::after{content:'';width:0;height:0;flex:none;
+    border-left:4px solid transparent;border-right:4px solid transparent;
+    border-bottom:5px solid #7E7E7E;margin-top:2px}
+  /* 窄屏没有悬停，卡片栈改成点开的抽屉 */
+  .deck{position:fixed;left:10px;right:10px;bottom:10px;z-index:120;display:none;
+    background:#fff;border:1px solid var(--line2);border-radius:16px;padding:10px;
+    box-shadow:0 20px 44px rgba(0,0,0,.16);max-height:62vh;overflow-y:auto}
+  .deck.open{display:flex;animation:popIn .16s cubic-bezier(.2,.9,.3,1)}
+  .deck .dc{height:40px;background:#F4F4F4}
+  .deck .dc + .dc{margin-top:6px}
+  .deck .dc:hover{transform:none}
+  .deck-info{display:none}
+  @keyframes popIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
   .nav-item{padding:8px 10px;white-space:nowrap;font-size:12px;gap:6px}
   .nav-item .n{display:none}
   .nav-item .n.hot{display:inline;font-size:10px;margin-left:2px}

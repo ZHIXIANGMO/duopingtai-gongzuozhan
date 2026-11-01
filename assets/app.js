@@ -127,7 +127,6 @@ function renderSide(state, active){
   const pos = cur['定位'] || '';
   const wk = (S['统计'] || {})['本周'] || {};
   const total = (S['统计'] || {})['累计'] || {};
-  const opened = (() => { try{ return sessionStorage.getItem('meOpen') === '1'; }catch(e){ return false; } })();
 
   const item = (key, href, label, icon, count, hot) => `
     <a class="nav-item ${active === key ? 'on' : ''}" href="${href}">
@@ -139,29 +138,14 @@ function renderSide(state, active){
   const myColor = IDENT_COLORS[myIdx % IDENT_COLORS.length];
   const myPlats = (roster.find(p => p.id === curId) || {})['平台'] || [];
 
-  const identRow = (p, i) => {
+  const deckCard = (p, i) => {
     const on = p.id === curId;
     const color = IDENT_COLORS[i % IDENT_COLORS.length];
-    const plats = (p['平台'] || []).map(a => `
-      <a class="pl" href="data.html?acc=${encodeURIComponent(a.id)}" data-plat="1">
-        <span class="pl-bar" style="background:${color}"></span>
-        <span class="pl-plat">${esc(a['平台'])}</span>
-        <span class="pl-name">${esc(a['账号名'])}</span>
-        ${a['投放数'] ? `<span class="pl-n">${a['投放数']}</span>` : ''}
-      </a>`).join('') || `<div class="pl-empty">还没开号</div>`;
-
     return `
-      <div class="id ${on ? 'on' : ''}" data-id="${esc(p.id)}">
-        <div class="id-top" data-act="pick">
-          <span class="id-av" style="background:linear-gradient(135deg,${color}40,${color})">${esc((p['名称'] || '?').slice(0, 1))}</span>
-          <span class="id-txt">
-            <span class="id-name">${esc(p['名称'] || '未命名')}</span>
-            <span class="id-pos">${esc(p['定位'] || '没写定位')}</span>
-          </span>
-          <span class="id-tag ${on ? 'now' : ''}">${on ? '当前' : (p['平台'] || []).length + ' 号'}</span>
-          <svg class="id-arrow" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-        </div>
-        <div class="id-plats">${plats}</div>
+      <div class="dc ${on ? 'on' : ''}" data-id="${esc(p.id)}" data-i="${i}">
+        <span class="dc-av" style="background:linear-gradient(135deg,${color}55,${color})">${esc((p['名称'] || '?').slice(0, 1))}</span>
+        <span class="dc-name">${esc(p['名称'] || '未命名')}</span>
+        ${on ? '<span class="dc-dot"></span>' : `<span class="dc-n">${(p['平台'] || []).length}</span>`}
       </div>`;
   };
 
@@ -184,15 +168,9 @@ function renderSide(state, active){
         '<svg viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-6"/></svg>', pubs)}
     </div>
     <div class="side-foot">
-      <div class="me-pop ${opened ? 'on' : ''}" id="mePop">
-        <div class="pop-head">
-          <span>IP 形象</span>
-          <span class="pop-hint">点一个，整个工作台就只看它</span>
-        </div>
-        <div class="id-list">
-          ${roster.length ? roster.map(identRow).join('') : '<div class="pl-empty">没有读到身份文件</div>'}
-        </div>
-        <a class="pop-add" href="matrix.html">管理 IP 与开号 →</a>
+      <div class="deck" id="deck">
+        ${roster.length ? roster.map(deckCard).join('') : '<div class="dc-empty">没读到身份文件</div>'}
+        <div class="deck-info" id="deckInfo"></div>
       </div>
       <div class="me" id="meCard">
         <div class="me-top">
@@ -210,62 +188,83 @@ function renderSide(state, active){
       </div>
     </div>`;
 
-  bindMeCard();
+  bindDeck(S);
 }
 
-function bindMeCard(){
-  const card = $('#meCard'), pop = $('#mePop');
-  if(!card || !pop) return;
+/* ---------- 卡片栈：悬停看详情，点击切身份 ---------- */
+function deckInfoHTML(p, on, color){
+  const plats = (p['平台'] || []).map(a => `
+    <a class="di-pl" href="data.html?acc=${encodeURIComponent(a.id)}">
+      <span class="di-bar" style="background:${color}"></span>
+      <span class="di-plat">${esc(a['平台'])}</span>
+      <span class="di-pname">${esc(a['账号名'])}</span>
+      ${a['投放数'] ? `<span class="di-pn">${a['投放数']}</span>` : ''}
+    </a>`).join('') || '<div class="di-empty">还没开号</div>';
 
-  const closePop = () => {
-    if(pop.classList.contains('on')){
-      pop.classList.remove('on');
-      try{ sessionStorage.setItem('meOpen', '0'); }catch(err){}
-    }
+  return `
+    <div class="di-head">
+      <span class="di-av" style="background:linear-gradient(135deg,${color}55,${color})">${esc((p['名称'] || '?').slice(0, 1))}</span>
+      <div class="di-tt">
+        <div class="di-name">${esc(p['名称'] || '未命名')}${on ? '<i class="di-on">当前</i>' : ''}</div>
+        <div class="di-pos">${esc(p['定位'] || '还没写定位')}</div>
+      </div>
+    </div>
+    <div class="di-sec">要发的平台</div>
+    ${plats}
+    <div class="di-foot">${on ? '整个工作台现在看的就是它' : '点一下，切过去'}</div>`;
+}
+
+let deckTimer = null;
+
+function bindDeck(S){
+  const deck = $('#deck'), info = $('#deckInfo');
+  if(!deck || !info) return;
+
+  const roster = (S && S['身份清单']) || [];
+  const curId = ((S && S['当前身份']) || {}).id || '';
+
+  const hideSoon = () => {
+    clearTimeout(deckTimer);
+    deckTimer = setTimeout(() => info.classList.remove('on'), 130);
   };
 
-  card.addEventListener('click', e => {
-    e.stopPropagation();
-    const on = pop.classList.toggle('on');
-    try{ sessionStorage.setItem('meOpen', on ? '1' : '0'); }catch(err){}
-  });
+  deck.addEventListener('mouseenter', () => clearTimeout(deckTimer));
+  deck.addEventListener('mouseleave', hideSoon);
 
-  pop.addEventListener('click', e => {
-    e.stopPropagation();
-    if(e.target.closest('[data-plat]')){
-      // 点平台号 → 跳过去只这个号的记录，跳过去后面板不必再开着
-      try{ sessionStorage.setItem('meOpen', '0'); }catch(err){}
-      return;
-    }
+  deck.querySelectorAll('.dc').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      clearTimeout(deckTimer);
+      const i = Number(el.dataset.i || 0);
+      const p = roster[i];
+      if(!p) return;
 
-    const top = e.target.closest('[data-act="pick"]');
-    if(!top) return;
-    const row = top.closest('.id');
-    if(!row || row.classList.contains('on')) return;  // 已经是当前身份，不重复刷新
+      info.innerHTML = deckInfoHTML(p, p.id === curId, IDENT_COLORS[i % IDENT_COLORS.length]);
+      info.classList.add('on');
 
-    setIdent(row.dataset.id);
-    try{ sessionStorage.setItem('meOpen', '1'); }catch(err){}
-    location.reload();
-  });
-
-  card.addEventListener('keydown', e => { if(e.key === 'Escape') closePop(); });
-
-  if(!document.body.dataset.meBound){
-    document.body.dataset.meBound = '1';
-    document.addEventListener('click', () => {
-      const p = $('#mePop');
-      if(p && p.classList.contains('on')){
-        p.classList.remove('on');
-        try{ sessionStorage.setItem('meOpen', '0'); }catch(err){}
-      }
+      // 贴着这张卡片的右边浮出来，上下不出视口
+      const r = el.getBoundingClientRect();
+      const h = info.offsetHeight;
+      const top = Math.min(Math.max(r.top - 8, 10), window.innerHeight - h - 14);
+      info.style.left = Math.round(r.right + 12) + 'px';
+      info.style.top = Math.round(Math.max(top, 10)) + 'px';
     });
-    document.addEventListener('keydown', e => {
-      if(e.key !== 'Escape') return;
-      const p = $('#mePop');
-      if(p && p.classList.contains('on')){
-        p.classList.remove('on');
-        try{ sessionStorage.setItem('meOpen', '0'); }catch(err){}
-      }
+
+    el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      if(!id || id === curId) return;
+      setIdent(id);
+      try{ sessionStorage.setItem('meOpen', '1'); }catch(err){}
+      location.reload();
+    });
+  });
+
+  // 窄屏没有悬停：点名片把它当抽屉拉开
+  const card = $('#meCard');
+  if(card){
+    card.addEventListener('click', e => {
+      e.stopPropagation();
+      if(window.innerWidth > 820) return;
+      deck.classList.toggle('open');
     });
   }
 }
