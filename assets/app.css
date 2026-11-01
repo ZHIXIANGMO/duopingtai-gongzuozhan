@@ -301,6 +301,12 @@ a{color:inherit;text-decoration:none}
 .mx{display:grid;gap:10px}
 .mx-cell{border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:#fff}
 .mx-cell.empty{border-style:dashed;background:#FCFCFC}
+/* 每个平台行末尾那个「再开一个」，故意做轻，不抢号的注意力 */
+.mx-cell.add{border-style:dashed;background:#FCFCFC;display:flex;flex-direction:column;
+  justify-content:center;align-items:center;text-align:center;padding:12px;min-height:0;cursor:pointer}
+.mx-cell.add:hover{background:#F7F7F7;border-color:#D8D8D8}
+.mx-cell.add:hover .mx-plus{color:#B9B9B9}
+.mx-plus{font-size:15px;line-height:1;color:#CFCFCF;margin-bottom:5px}
 .mx-plat{font-size:9.5px;letter-spacing:1.2px;color:#C2C2C2;margin-bottom:6px}
 .mx-name{font-size:13.5px;font-weight:600;margin-bottom:3px}
 .mx-sub{font-size:10.5px;color:var(--mute);line-height:1.7}

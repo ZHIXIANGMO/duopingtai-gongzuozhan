@@ -39,9 +39,9 @@
     <div class="sec-head"><h2>怎么读这张表</h2></div>
     <div class="card">
       <div class="who-s" style="line-height:1.9;color:#7C7C7C">
-        一行是一个身份（人设），一格是一个真实存在的号。<br>
-        同一个身份在四个平台就是四个号，内容各自适配；同一个平台有两个身份，赛道不串味。<br>
-        空格子不是"缺"，是"还没开"。开号之前先想清楚：这个号跟已有的是不是抢同一批读者。
+        这里只显示<b id="whoName"></b>名下的号，别的 IP 不会混进来。想换一个 IP 看，点左下角那摞卡片。<br>
+        一行是一个平台。同一个平台可以开多个号，比如一个主号一个测试号，互不影响。<br>
+        点任意一个号，进数据页只看它。"＋"不是缺口，是提醒你这里还能再开。
       </div>
     </div>
   </main>
@@ -68,52 +68,66 @@ function renderWho(){
         <div class="who-s">${esc(pos)}${pos && reader ? ' · ' : ''}${esc(reader)}</div>
       </div>
     </div>`;
+
+  const wn = $('#whoName');
+  if(wn) wn.textContent = name;
 }
 
 function renderGrid(){
-  const accs = STATE['账号'] || [];
+  const who = STATE['当前身份'] || {};
+  const accs = STATE['账号'] || [];        // 服务端已按当前身份收窄，这里不再过滤
   const stats = (STATE['统计'] || {})['按账号'] || [];
   const byKey = {};
   stats.forEach(s => byKey[s['账号']] = s);
 
-  const idents = STATE['身份'] || [];
-  const who = STATE['当前身份'] || {};
-
-  let html = '';
-  (idents.length ? idents : [who]).forEach(ident => {
-    if(!ident || !ident.id) return;
-    const mine = accs.filter(a => a['身份'] === ident.id);
-    html += `<div class="sec-head"><h2>${esc(ident['名称'] || '未命名')}</h2>
-      <span>${mine.length} 个号</span></div>`;
-
-    PLATFORMS.forEach(p => {
-      const cells = mine.filter(a => a['平台'] === p);
-      html += `<div class="row-plat">
-        <div class="row-lab"><b>${esc(p)}</b><span>${cells.length ? cells.length + ' 个号' : '未开'}</span></div>
-        <div class="cells">
-          ${cells.map(a => {
-            const s = byKey[a.id] || {};
-            return `<a class="mx-cell" href="data.html">
-              <div class="mx-name">${esc(a['账号名'] || a.id)}</div>
-              <div class="mx-sub">粉丝基线 ${fmt(a['粉丝基线'] || 0)} · ${esc(a['状态'] || '正常')}</div>
-              <div class="mx-nums">
-                <div><b class="num">${s['篇数'] || 0}</b><span>已投</span></div>
-                <div><b class="num">${fmt(s['阅读'] || 0)}</b><span>阅读</span></div>
-                <div><b class="num">${fmt(s['涨粉'] || 0)}</b><span>涨粉</span></div>
-              </div>
-            </a>`;
-          }).join('')}
-          ${cells.length < 2 ? `<div class="mx-cell empty">
-            <div class="mx-plat">还能开</div>
-            <div class="mx-sub" style="margin-top:4px">在 <b>数据/账号/</b> 里加一个 md，这个格子就填上了</div>
-          </div>` : ''}
-        </div>
-      </div>`;
-    });
+  // 默认四个平台打底，剩下的按这个身份实际开过的补上，不写死
+  const plats = PLATFORMS.slice();
+  accs.forEach(a => {
+    const p = a['平台'];
+    if(p && plats.indexOf(p) < 0) plats.push(p);
   });
 
+  const html = plats.map(p => {
+    const cells = accs.filter(a => a['平台'] === p);
+
+    const cards = cells.map(a => {
+      const s = byKey[a.id] || {};
+      return `<a class="mx-cell" href="data.html?acc=${encodeURIComponent(a.id)}">
+        <div class="mx-name">${esc(a['账号名'] || a.id)}</div>
+        <div class="mx-sub">粉丝基线 ${fmt(a['粉丝基线'] || 0)} · ${esc(a['状态'] || '正常')}</div>
+        <div class="mx-nums">
+          <div><b class="num">${s['篇数'] || 0}</b><span>已投</span></div>
+          <div><b class="num">${fmt(s['阅读'] || 0)}</b><span>阅读</span></div>
+          <div><b class="num">${fmt(s['涨粉'] || 0)}</b><span>涨粉</span></div>
+        </div>
+      </a>`;
+    }).join('');
+
+    return `<div class="row-plat">
+      <div class="row-lab">
+        <b>${esc(p)}</b>
+        <span>${cells.length ? cells.length + ' 个号' : '未开'}</span>
+      </div>
+      <div class="cells">
+        ${cards}
+        <div class="mx-cell add" data-add="${esc(p)}">
+          <div class="mx-plus">＋</div>
+          <div class="mx-sub">${cells.length ? '再开一个号' : '开第一个号'}</div>
+          <div class="mx-sub" style="margin-top:3px;color:#B8B8B8">点这里看怎么加</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
   $('#grid').innerHTML = html;
-  $('#topCount').textContent = accs.length + ' 个号 · ' + (STATE['身份'] || []).length + ' 个身份';
+  $('#topCount').textContent = (who['名称'] || '未命名') + ' · ' + accs.length + ' 个号';
+
+  // 「＋」不是真按钮，点了告诉人去哪加，别让它看起来能自动建号
+  $('#grid').querySelectorAll('[data-add]').forEach(el => {
+    el.addEventListener('click', () => {
+      toast('在 数据/账号/ 里复制一个 md，改 id 和 账号名，平台填「' + el.dataset.add + '」');
+    });
+  });
 }
 
 (async function init(){
