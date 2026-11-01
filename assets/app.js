@@ -158,7 +158,7 @@ function renderSide(state, active){
       </div>
     </div>
     <div class="nav">
-      ${item('work', 'index.html', '工作台',
+      ${item('work', 'index.html', '今天',
         '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h13"/></svg>', todos, todos > 0)}
       ${item('topics', 'topics.html', '选题',
         '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>', topics)}
@@ -361,4 +361,61 @@ async function applyWrites(writes){
 function autoGrow(el){
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 190) + 'px';
+}
+
+/* ---------- 五阶段 ---------- */
+const STAGES = ['讨论', '待审', '配图', '排版', '复盘'];
+const STAGE_LABEL = {
+  '讨论': '选题与讨论', '待审': '审核修改', '配图': '配图',
+  '排版': '排版与发布', '复盘': '数据复盘'
+};
+
+function stageAt(d){
+  const i = STAGES.indexOf((d || {})['阶段']);
+  return i < 0 ? 0 : i;
+}
+
+/* 一条稿件的进度条。五格，走过的填红，待重做的描虚线。 */
+function stageBar(d, opts){
+  opts = opts || {};
+  const here = stageAt(d);
+  const redo = d['待重做'] || [];
+  const has = d['有产物'] || [];
+
+  const segs = STAGES.map((s, i) => {
+    const cls = ['sg'];
+    if(i < here) cls.push('done');
+    if(i === here) cls.push('now');
+    if(redo.indexOf(s) >= 0) cls.push('redo');
+    if(has.indexOf(s) >= 0) cls.push('has');
+    const tip = STAGE_LABEL[s] + (redo.indexOf(s) >= 0 ? ' · 待重做' : '');
+    return `<button type="button" class="${cls.join(' ')}" data-s="${s}" title="${esc(tip)}" aria-label="${esc(tip)}"><i></i></button>`;
+  }).join('');
+
+  const label = opts.label === false ? '' :
+    `<div class="sn">${esc(STAGE_LABEL[STAGES[here]] || '')} · ${here + 1}/${STAGES.length}${redo.length ? ' · 待重做 ' + redo.length : ''}</div>`;
+
+  return `<div class="stage ${opts.cls || ''}" data-id="${esc(d.id || '')}">
+    <div class="segs">${segs}</div>
+    ${label}
+  </div>`;
+}
+
+/* 点进度条 → 切阶段。往回走时由服务端把下游产物标待重做。 */
+async function setStage(id, stage, note){
+  const r = await postJSON('/api/stage', {kind: '稿件', id, '阶段': stage, '说明': note || ''});
+  return r.item;
+}
+
+/* 给容器里的每格绑点击。handler(stage, index, here) */
+function bindStage(host, d, handler){
+  if(!host || !handler) return;
+  const here = stageAt(d);
+  host.querySelectorAll('.stage .sg').forEach(btn => {
+    btn.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      handler(btn.dataset.s, STAGES.indexOf(btn.dataset.s), here);
+    });
+  });
 }

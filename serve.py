@@ -49,8 +49,26 @@ ORDER = {
     "灵感": ["id", "来源", "原话", "捕获", "关联身份", "状态"],
     "选题": ["id", "来自灵感", "标题候选", "正方", "反方", "我站", "我可能错在哪",
            "目标身份", "目标平台", "优先级", "状态", "创建"],
-    "稿件": ["id", "选题", "身份", "版本", "状态", "字数", "创建", "更新"],
+    "稿件": ["id", "选题", "身份", "版本", "阶段", "状态", "重做", "字数", "创建", "更新"],
 }
+
+# 五阶段流水线。顺序就是进度条的格子顺序，改这里，前端跟着变。
+STAGES = ["讨论", "待审", "配图", "排版", "复盘"]
+STAGE_LABEL = {
+    "讨论": "选题与讨论",
+    "待审": "审核修改",
+    "配图": "配图",
+    "排版": "排版与发布",
+    "复盘": "数据复盘",
+}
+# 每个阶段对应的正文小节。退回去改正文，后面这些小节就要重做。
+STAGE_SECTION = {"配图": "配图", "排版": "排版", "复盘": "复盘"}
+# 旧稿件的「状态」映射到阶段。只在读的时候兜底，不动老文件。
+LEGACY_STAGE = {"构思": "讨论", "初稿": "待审", "打磨": "待审",
+                "待确认": "待审", "定稿": "排版"}
+
+LOG_CSV = os.path.join(DATA, "日志.csv")
+LOG_FIELDS = ["时间", "日期", "类型", "对象", "动作", "备注"]
 
 # 人设正文的小节，顺序固定。前端按这个渲染，写回时按这个重排。
 PERSONA_SECTIONS = ["这个人是谁", "要传递什么", "说话方式", "模仿样例",
@@ -141,6 +159,19 @@ def save_entity(kind, item_id, fields=None, body=None):
             meta[k] = "" if v is None else str(v)
     if kind == "稿件":
         meta["更新"] = date.today().isoformat()
+        # 正文一改，已经做出来的阶段产物就对不上了，标待重做（不马上删，留着给人看）
+        if body is not None and (body or "") != (old_body or ""):
+            here = stage_of(meta)
+            secs = sections_of(body)
+            redo = redo_list(meta)
+            for s in STAGES[STAGES.index(here):]:
+                name = STAGE_SECTION.get(s)
+                if name and (secs.get(name) or "").strip() and s not in redo:
+                    redo.append(s)
+            if redo:
+                meta["重做"] = ",".join(redo)
+                append_log("正文", item_id, "改了正文",
+                           "；".join(x for x in STAGES if x in redo) + " 待重做")
     snapshot(path, kind)
     write_md(path, meta, old_body if body is None else body, kind)
 
@@ -225,6 +256,14 @@ def save_section(kind, item_id, section, text):
         raise ValueError("找不到文件：%s" % path)
 
     meta, old_body = parse_md(path)
+    if kind == "稿件":
+        # 重新写了某一阶段的产物，这一格就不再是「待重做」了
+        meta["更新"] = date.today().isoformat()
+        redo = redo_list(meta)
+        if str(section).strip() in redo:
+            redo.remove(str(section).strip())
+            meta["重做"] = ",".join(redo)
+        append_log("产物", item_id, "写了「%s」" % str(section).strip(), "")
     snapshot(path, kind)
     write_md(path, meta, rewrite_section(old_body, str(section).strip(),
                                          flatten_heads(text)), kind)
@@ -232,6 +271,212 @@ def save_section(kind, item_id, section, text):
     fresh, fresh_body = parse_md(path)
     fresh["正文"] = fresh_body
     return fresh
+
+
+# ---------------------------------------------------------------- 五阶段
+
+def sections_of(body):
+    """把正文按 ## 切成 {小节名: 内容}。用来判断某个阶段的产物有没有做。"""
+    out, cur, buf = {}, None, []
+    for line in (body or "").splitlines():
+        if line.startswith("## "):
+            if cur is not None:
+                out[cur] = "\n".join(buf).strip()
+            cur, buf = line[3:].strip(), []
+        elif cur is not None:
+            buf.append(line)
+    if cur is not None:
+        out[cur] = "\n".join(buf).strip()
+    return out
+
+
+def stage_of(item):
+    """读稿件的阶段。老文件只有「状态」，按映射兜底，不改老文件。"""
+    s = str(item.get("阶段") or "").strip()
+    if s in STAGES:
+        return s
+    return LEGACY_STAGE.get(str(item.get("状态") or "").strip(), "讨论")
+
+
+def redo_list(item):
+    """标了待重做的阶段。逗号分号都认。"""
+    raw = str(item.get("重做") or "").replace("，", ",").replace("、", ",")
+    return [x.strip() for x in raw.split(",") if x.strip() in STAGES]
+
+
+def archive_section(item_id, stage, text):
+    """作废的产物不删，挪进 .历史/作废，以后想捞还能捞。"""
+    d = os.path.join(DATA, ".历史", "作废")
+    try:
+        os.makedirs(d, exist_ok=True)
+        name = "%s.%s.%s.md" % (item_id, stage, datetime.now().strftime("%Y%m%d-%H%M%S"))
+        with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+            f.write("## %s\n\n%s\n" % (STAGE_SECTION.get(stage, stage), text))
+        return os.path.join(".历史", "作废", name)
+    except OSError:
+        return ""
+
+
+def advance_stage(kind, item_id, target, note=""):
+    """把稿件推到某个阶段。
+
+    往回走：这一段之后已经做出来的产物标「待重做」，内容先留着给人看。
+    再往前走回到那一格：标过待重做的产物挪进 .历史/作废，小节清空，重新开。
+    """
+    if kind != "稿件":
+        raise ValueError("只有稿件有阶段")
+    target = str(target or "").strip()
+    if target not in STAGES:
+        raise ValueError("没有这个阶段：%s" % target)
+    path = os.path.join(DIRS["稿件"], "%s.md" % item_id)
+    if not os.path.isfile(path):
+        raise ValueError("找不到稿件：%s" % item_id)
+
+    meta, body = parse_md(path)
+    cur = stage_of(meta)
+    ci, ti = STAGES.index(cur), STAGES.index(target)
+    redo = redo_list(meta)
+    secs = sections_of(body)
+    events = []
+
+    if ti < ci:
+        for s in STAGES[ti + 1:]:
+            name = STAGE_SECTION.get(s)
+            if name and (secs.get(name) or "").strip() and s not in redo:
+                redo.append(s)
+        if redo:
+            events.append("%s 待重做" % "、".join(
+                x for x in STAGES if x in redo))
+    elif ti > ci:
+        for s in STAGES[ci:ti + 1]:
+            if s not in redo:
+                continue
+            name = STAGE_SECTION.get(s)
+            if name:
+                old = (secs.get(name) or "").strip()
+                if old:
+                    archive_section(item_id, s, old)
+                body = rewrite_section(body, name, "")
+                events.append("%s 作废重开" % s)
+            redo.remove(s)
+        skipped = [s for s in STAGES[ci + 1:ti] if s not in redo]
+        if skipped:
+            events.append("跳过 %s" % "、".join(skipped))
+
+    meta["阶段"] = target
+    meta["重做"] = ",".join(redo)
+    meta["更新"] = date.today().isoformat()
+    meta.pop("状态", None)  # 阶段接管了，旧的别留在文件里
+    snapshot(path, "稿件")
+    write_md(path, meta, body, "稿件")
+    append_log("阶段", item_id, "%s → %s" % (cur, target),
+               note or "；".join(events))
+
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    fresh["阶段"] = target
+    return fresh
+
+
+# ---------------------------------------------------------------- 开稿
+
+DRAFT_TEMPLATE = """## 正文
+
+## 这版改了什么
+
+v1：从选题 {topic} 开的新稿。
+
+## 人工意见
+
+## 配图
+
+## 排版
+
+## 复盘
+"""
+
+
+def next_id(kind, prefix):
+    """按目录里已有的最大编号往下排，dr-001 之后是 dr-002。"""
+    d = DIRS.get(kind)
+    if not d:
+        raise ValueError("未知的类型：%s" % kind)
+    os.makedirs(d, exist_ok=True)
+    nums = []
+    for name in os.listdir(d):
+        m = re.match(r"%s-(\d+)\.md$" % prefix, name)
+        if m:
+            nums.append(int(m.group(1)))
+    return "%s-%03d" % (prefix, (max(nums) + 1) if nums else 1)
+
+
+def new_draft(topic_id, ident_id=""):
+    """从一条选题开一篇新稿，直接落在第一阶段「讨论」。"""
+    topic_id = str(topic_id or "").strip()
+    if not topic_id:
+        raise ValueError("没说从哪条选题开")
+    topic = None
+    for t in list_entity("选题"):
+        if t["id"] == topic_id:
+            topic = t
+            break
+    if topic is None:
+        raise ValueError("找不到选题：%s" % topic_id)
+
+    if not ident_id:
+        ident_id = (id_list(topic.get("目标身份")) or [settings().get("身份") or ""])[0]
+
+    did = next_id("稿件", "dr")
+    meta = {
+        "id": did, "选题": topic_id, "身份": ident_id or "",
+        "版本": "v1", "阶段": "讨论", "字数": 0,
+        "创建": date.today().isoformat(), "更新": date.today().isoformat(),
+    }
+    path = os.path.join(DIRS["稿件"], "%s.md" % did)
+    write_md(path, meta, DRAFT_TEMPLATE.format(topic=topic_id), "稿件")
+    append_log("开稿", did, "从 %s 开稿" % topic_id,
+               (topic.get("标题候选") or "").split("|")[0].strip())
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    return fresh
+
+
+# ---------------------------------------------------------------- 日志
+
+def append_log(类型, 对象, 动作, 备注=""):
+    """一条线一行，calendar 和首页都从这里读。"""
+    now = datetime.now()
+    row = {"时间": now.strftime("%Y-%m-%d %H:%M"), "日期": now.date().isoformat(),
+           "类型": 类型, "对象": 对象, "动作": 动作,
+           "备注": str(备注 or "").replace("\n", " ").strip()}
+    fresh = not os.path.isfile(LOG_CSV)
+    try:
+        os.makedirs(DATA, exist_ok=True)
+        with open(LOG_CSV, "a", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=LOG_FIELDS, extrasaction="ignore")
+            if fresh:
+                w.writeheader()
+            w.writerow(row)
+    except OSError:
+        pass  # 日志写不进去不该挡住业务
+    return row
+
+
+def read_logs(limit=400):
+    if not os.path.isfile(LOG_CSV):
+        return []
+    rows = []
+    try:
+        with open(LOG_CSV, "r", encoding="utf-8-sig", newline="") as f:
+            for raw in csv.DictReader(f):
+                if not (raw.get("时间") or "").strip():
+                    continue
+                rows.append(dict((k, (raw.get(k) or "").strip()) for k in LOG_FIELDS))
+    except (OSError, csv.Error):
+        return []
+    rows.sort(key=lambda r: r["时间"], reverse=True)
+    return rows[:limit]
+
 
 
 
@@ -401,12 +646,23 @@ def build_todos(state):
             })
 
     for d in state["稿件"]:
-        if d.get("状态") == "待确认":
+        here = stage_of(d)
+        redo = redo_list(d)
+        if here == "待审":
             todos.append({
                 "级别": "red",
                 "类型": "稿件待你过目",
                 "标题": "%s %s" % (d["id"], d.get("选题") or ""),
-                "说明": "AI 改完了，等你看一眼。",
+                "说明": "改完了，等你看一眼。过了就进配图。",
+                "目标": {"kind": "稿件", "id": d["id"]},
+            })
+        elif redo:
+            todos.append({
+                "级别": "red",
+                "类型": "阶段产物待重做",
+                "标题": "%s %s" % (d["id"], d.get("选题") or ""),
+                "说明": "退回改过正文，%s 要重做。" % "、".join(
+                    x for x in STAGES if x in redo),
                 "目标": {"kind": "稿件", "id": d["id"]},
             })
 
@@ -644,6 +900,16 @@ def build_state(ident_id=""):
         t = topic_map.get(d.get("选题"), {})
         d["选题标题"] = (t.get("标题候选") or "").split("|")[0].strip() or d.get("选题", "")
         d["字数"] = len(re.sub(r"\s", "", (d.get("正文") or ""))) or 0
+        # 五阶段：前端靠这几个字段画进度条，不用自己算
+        here = stage_of(d)
+        d["阶段"] = here
+        d["阶段名"] = STAGE_LABEL.get(here, here)
+        d["阶段序号"] = STAGES.index(here) + 1
+        d["阶段总数"] = len(STAGES)
+        d["待重做"] = redo_list(d)
+        secs = sections_of(d.get("正文") or "")
+        d["有产物"] = [s for s in STAGES if STAGE_SECTION.get(s)
+                     and (secs.get(STAGE_SECTION[s]) or "").strip()]
 
     for t in state["选题"]:
         t["稿件"] = [d["id"] for d in state["稿件"] if d.get("选题") == t["id"]]
@@ -674,6 +940,8 @@ def build_state(ident_id=""):
     state["身份总数"] = len(roster)
     state["待办"] = build_todos(state)
     state["统计"] = build_stats(state)
+    state["日志"] = read_logs()
+    state["阶段定义"] = [{"键": s, "名": STAGE_LABEL.get(s, s)} for s in STAGES]
 
     conf = local_conf()
     model = settings().get("模型") or {}
@@ -1033,6 +1301,15 @@ class Handler(SimpleHTTPRequestHandler):
                 p = self._body()
                 item = save_section(p.get("kind", "身份"), p.get("id", ""),
                                     p.get("小节", ""), p.get("内容", ""))
+                return self._json({"ok": True, "item": item})
+            if path == "/api/stage":
+                p = self._body()
+                item = advance_stage(p.get("kind", "稿件"), p.get("id", ""),
+                                     p.get("阶段", ""), p.get("说明", ""))
+                return self._json({"ok": True, "item": item})
+            if path == "/api/new_draft":
+                p = self._body()
+                item = new_draft(p.get("选题", ""), p.get("身份", ""))
                 return self._json({"ok": True, "item": item})
             if path == "/api/ingest":
                 p = self._body()

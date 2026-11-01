@@ -3,46 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>工作台 · 内容矩阵</title>
+<title>今天 · 内容矩阵</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <div class="app">
   <aside class="side" id="side"></aside>
 
-  <main class="main work">
-    <div class="queue">
-      <div class="q-head"><b>等你处理</b><span id="qCount"></span></div>
-      <div class="q-sub">不处理就卡住的事。点一条，右边接着说。</div>
-      <div id="qList"></div>
+  <main class="main home">
+    <div class="topbar">
+      <div class="crumb" id="crumb"></div>
+      <div class="top-right">
+        <div class="sync"><span id="syncDot" class="dot"></span><span id="syncText"></span></div>
+      </div>
     </div>
-
-    <section class="chat">
-      <div class="chat-head">
-        <div class="ch-l">
-          <div class="ch-t" id="chTitle">还没选东西</div>
-          <div class="ch-s" id="chSub">从左边挑一条，或直接在下面说你要干什么</div>
-        </div>
-        <div class="top-right">
-          <div class="sync"><span id="syncDot" class="dot"></span><span id="syncText"></span></div>
-        </div>
-      </div>
-
-      <div class="msgs" id="msgs"></div>
-
-      <div class="composer">
-        <div id="aiBanner"></div>
-        <div class="cbox">
-          <textarea id="input" rows="1" placeholder="说你想干什么…"></textarea>
-          <div class="crow">
-            <span class="hint" id="hint">Enter 发送 · Shift + Enter 换行</span>
-            <button class="send" id="send" title="发送">
-              <svg viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
+    <div id="body"></div>
   </main>
 </div>
 <div class="toast" id="toast"></div>
@@ -50,300 +25,284 @@
 <script src="assets/app.js"></script>
 <script>
 let STATE = null;
-let CUR = { kind:'', id:'', title:'', sub:'' };
-let HISTORY = [];
-let SENDING = false;
+let PICKDAY = '';   // 日历上点开的那一天
 
-const $msgs = () => $('#msgs');
-
-function keyOf(){ return 'chat:' + CUR.kind + ':' + CUR.id; }
-
-function loadHistory(){
-  try{
-    const raw = localStorage.getItem(keyOf());
-    HISTORY = raw ? JSON.parse(raw) : [];
-  }catch(e){ HISTORY = []; }
-  if(!HISTORY.length && CUR.kind){
-    HISTORY = [{ role:'assistant', content: opener(), _sys:true }];
-  }
+/* ---------- 小工具 ---------- */
+function todayStr(){
+  return ((STATE['统计'] || {})['今天']) || new Date().toISOString().slice(0, 10);
 }
 
-function saveHistory(){
-  try{ localStorage.setItem(keyOf(), JSON.stringify(HISTORY.slice(-40))); }catch(e){}
+function parseDay(s){
+  const p = String(s || '').split('-').map(Number);
+  return new Date(p[0], (p[1] || 1) - 1, p[2] || 1);
 }
 
-function opener(){
-  if(CUR.kind === '选题'){
-    return '这条选题开着。' + (CUR.sub || '') + '\n\n先说说你现在的想法，或者让我看看冲突哪里最虚。';
-  }
-  if(CUR.kind === '稿件'){
-    return '稿子在这儿。' + (CUR.sub || '') + '\n\n想改哪段直接说，想整篇重写就说方向。';
-  }
-  if(CUR.kind === '灵感'){
-    return '这条灵感还只是个句子。' + (CUR.sub || '') + '\n\n要不要试试把它变成一个选题？';
-  }
-  return '说吧，你现在想干什么？';
+function dayLabel(s){
+  const d = parseDay(s);
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日 周' + '日一二三四五六'[d.getDay()];
 }
 
-/* ---------- 队列 ---------- */
-function renderQueue(){
-  const host = $('#qList');
-  if(!STATE){ host.innerHTML = '<div class="q-empty">读不到数据</div>'; return; }
+function shiftDay(d, n){
+  const x = new Date(d.getTime());
+  x.setDate(x.getDate() + n);
+  return x;
+}
 
+/* ---------- 顶部 ---------- */
+function renderTop(){
+  const stats = STATE['统计'] || {};
+  const week = stats['本周'] || {};
   const todos = STATE['待办'] || [];
-  const topics = STATE['选题'] || [];
-  const drafts = STATE['稿件'] || [];
-  const sparks = STATE['灵感'] || [];
+  const drafts = (STATE['稿件'] || []).filter(d => d['阶段'] !== '复盘');
+  const who = (STATE['当前身份'] || {})['名称'] || '';
 
-  $('#qCount').textContent = todos.length ? todos.length + ' 件' : '';
+  $('#crumb').innerHTML = `<b>${esc(dayLabel(todayStr()))}</b> · ${esc(who)}`;
 
-  const qitem = (o) => `
-    <div class="q-item ${CUR.kind === o.kind && CUR.id === o.id ? 'on' : ''} ${o.red ? 'red' : ''}"
-         data-kind="${o.kind}" data-id="${esc(o.id)}">
-      <div class="q-body">
-        <div class="q-type"><i class="${o.red ? '' : 'gray'}"></i>${esc(o.type)}</div>
-        <div class="q-title">${esc(o.title)}</div>
-        ${o.note ? `<div class="q-note">${esc(o.note)}</div>` : ''}
-      </div>
-    </div>`;
+  const red = todos.filter(t => t['级别'] === 'red').length;
+  const bits = [];
+  if(red) bits.push(`<b>${red}</b> 件卡住了`);
+  if(drafts.length) bits.push(`<b>${drafts.length}</b> 篇在手上`);
+  if(!red && !drafts.length) bits.push('今天没有非做不可的事');
 
-  let html = '';
+  return `<div class="hello">
+    <div class="hello-h">${esc(greeting())}</div>
+    <div class="hello-s">${bits.join('，')}。${esc(week['标签'] ? '本周已发 ' + (week['篇数'] || 0) + '/' + (week['目标'] || 0) : '')}</div>
+  </div>`;
+}
 
-  if(todos.length){
-    html += `<div class="q-group"><div class="q-lab">该你出手</div>`;
-    html += todos.map(t => qitem({
-      kind: t['目标'].kind,
-      id: t['目标'].id,
-      type: t['类型'],
-      title: t['标题'],
-      note: t['说明'],
-      red: t['级别'] === 'red'
-    })).join('');
-    html += `</div>`;
-  }
+function greeting(){
+  const h = new Date().getHours();
+  if(h < 6) return '还没睡';
+  if(h < 11) return '早上好';
+  if(h < 14) return '中午好';
+  if(h < 18) return '下午好';
+  if(h < 23) return '晚上好';
+  return '快睡吧';
+}
 
-  const waiting = topics.filter(t => t['状态'] === '待定');
-  if(waiting.length){
-    html += `<div class="q-group"><div class="q-lab">选题 ${waiting.length}</div>`;
-    html += waiting.map(t => qitem({
-      kind:'选题', id:t.id, type:'选题',
-      title:(t['标题候选']||'').split('|')[0].trim() || t.id,
-      note: (t['缺冲突'] && t['缺冲突'].length)
-        ? '缺：' + t['缺冲突'].join(' / ')
-        : '冲突齐了，可以往下走'
-    })).join('');
-    html += `</div>`;
-  }
+/* ---------- KPI ---------- */
+function kpis(){
+  const stats = STATE['统计'] || {};
+  const week = stats['本周'] || {};
+  const total = stats['累计'] || {};
+  const drafts = (STATE['稿件'] || []).filter(d => d['阶段'] !== '复盘');
+  const todos = STATE['待办'] || [];
 
-  const live = drafts.filter(d => d['状态'] !== '定稿');
-  if(live.length){
-    html += `<div class="q-group"><div class="q-lab">稿件 ${live.length}</div>`;
-    html += live.map(d => qitem({
-      kind:'稿件', id:d.id, type:'稿件 · ' + (d['状态']||''),
-      title: d['选题标题'] || d.id,
-      note: (d['字数']||0) + ' 字 · ' + (d['版本']||'v1')
-    })).join('');
-    html += `</div>`;
-  }
+  const card = (v, k, d) => `<div class="kpi">
+    <div class="kv">${v}</div><div class="kk">${k}</div><div class="kd">${d || ''}</div></div>`;
 
-  const young = sparks.filter(s => s['状态'] === '未孵化');
-  if(young.length){
-    html += `<div class="q-group"><div class="q-lab">灵感 ${young.length}</div>`;
-    html += young.map(s => qitem({
-      kind:'灵感', id:s.id, type:'灵感 · ' + (s['来源']||''),
-      title: s['原话'] || s.id
-    })).join('');
-    html += `</div>`;
-  }
+  return `<div class="kpis">
+    ${card(`${week['篇数'] || 0}<small>/${week['目标'] || 0}</small>`, '本周发布', `还剩 ${week['剩几天'] || 0} 天`)}
+    ${card(fmt(total['阅读'] || 0), '累计阅读', `互动 ${fmt(total['互动'] || 0)}`)}
+    ${card(drafts.length, '在手稿件', drafts.length ? '最远到 ' + esc(furthest(drafts)) : '一条都没有')}
+    ${card(todos.length, '等你处理', todos.length ? '不处理就卡着' : '干净')}
+  </div>`;
+}
 
-  const who = ((STATE && STATE['当前身份']) || {})['名称'] || '这个身份';
-  host.innerHTML = html ||
-    `<div class="q-empty">${esc(who)} 名下还没有东西。<br>去 Obsidian 里记一条灵感，或者直接跟我说你想写什么。</div>`;
-
-  host.querySelectorAll('.q-item').forEach(el => {
-    el.addEventListener('click', () => select(el.dataset.kind, el.dataset.id));
+function furthest(drafts){
+  let best = '讨论';
+  drafts.forEach(d => {
+    if(STAGES.indexOf(d['阶段']) > STAGES.indexOf(best)) best = d['阶段'];
   });
+  return STAGE_LABEL[best] || best;
 }
 
-/* ---------- 选中 ---------- */
-function findItem(kind, id){
-  return ((STATE && STATE[kind]) || []).find(x => x.id === id);
-}
+/* ---------- 账号与数据 ---------- */
+function accountsCard(){
+  const stats = STATE['统计'] || {};
+  const byAcc = stats['按账号'] || [];
+  const accs = STATE['账号'] || [];
 
-function select(kind, id){
-  if(kind === '数据'){ location.href = 'data.html'; return; }
-
-  const item = findItem(kind, id);
-  CUR = { kind, id, title:'', sub:'' };
-
-  if(kind === '选题' && item){
-    CUR.title = (item['标题候选'] || '').split('|')[0].trim() || id;
-    const miss = item['缺冲突'] || [];
-    CUR.sub = miss.length ? '缺：' + miss.join(' / ') : '冲突四格齐了';
-  }else if(kind === '稿件' && item){
-    CUR.title = item['选题标题'] || id;
-    CUR.sub = (item['状态'] || '') + ' · ' + (item['字数'] || 0) + ' 字 · ' + (item['版本'] || 'v1');
-  }else if(kind === '灵感' && item){
-    CUR.title = item['原话'] || id;
-    CUR.sub = (item['来源'] || '') + ' 记的 · ' + (item['捕获'] || '');
-  }else{
-    CUR.title = '没找到这条';
+  if(!accs.length){
+    return card('账号与数据', '<div class="blank">还没有账号。先在 matrix.html 里开一个号。</div>');
   }
 
-  $('#chTitle').textContent = CUR.title;
-  $('#chSub').textContent = CUR.sub || '';
-  loadHistory();
-  renderMsgs();
-  renderQueue();
+  const rows = accs.map(a => {
+    const d = byAcc.find(x => x['账号'] === a.id) || {};
+    const pubs = d['篇数'] || 0;
+    const read = d['阅读'] || 0;
+    return `<a class="hrow" href="data.html?acc=${encodeURIComponent(a.id)}">
+      <span class="hrow-l">
+        ${platTag(a['平台'])}
+        <b>${esc(a['账号名'] || a.id)}</b>
+      </span>
+      <span class="hrow-n num">${pubs}<i>篇</i></span>
+      <span class="hrow-n num">${read ? fmt(read) : '—'}<i>阅读</i></span>
+      <span class="hrow-n num">${read ? pct(d['互动率']) : '—'}<i>互动</i></span>
+    </a>`;
+  }).join('');
+
+  const note = byAcc.length ? '' :
+    '<div class="hnote">还没有投放数据。发一篇之后在数据页填一行，这儿就活了。</div>';
+
+  return card('账号与数据', `
+    <div class="hrow h">
+      <span class="hrow-l">账号</span>
+      <span class="hrow-n">发布</span><span class="hrow-n">阅读</span><span class="hrow-n">互动率</span>
+    </div>${rows}${note}`, '按账号看，点一行进数据页');
 }
 
-/* ---------- 消息 ---------- */
-function msgHtml(m, idx){
-  const ai = m.role !== 'user';
-  return `<div class="msg ${ai ? 'ai' : 'user'}">
-    <div class="who">${ai ? 'AI' : '你'}</div>
-    <div class="bubble">${renderMd(m.content)}</div>
-  </div>`;
-}
+/* ---------- 选题进度 ---------- */
+function topicsCard(){
+  const topics = (STATE['选题'] || []).filter(t => t['状态'] !== '已用' && t['状态'] !== '废弃');
+  const drafts = STATE['稿件'] || [];
 
-function renderMsgs(){
-  const host = $msgs();
-  if(!CUR.kind){
-    host.innerHTML = `<div class="blank" style="margin:auto">
-      左边是这条线上<b>卡住的东西</b>。<br>
-      点一条，我们就在这儿聊它。<br><br>
-      也可以直接在这儿说：<b>我想写一篇关于……</b>
+  if(!topics.length){
+    return card('选题进度', '<div class="blank">选题库是空的。</div>');
+  }
+
+  const rows = topics.map(t => {
+    const mine = drafts.filter(d => d['选题'] === t.id);
+    const title = (t['标题候选'] || '').split('|')[0].trim() || t.id;
+    const miss = t['缺冲突'] || [];
+
+    if(!mine.length){
+      return `<div class="hrow topic" data-topic="${esc(t.id)}">
+        <span class="hrow-l"><b>${esc(title)}</b>
+          <em class="hsub">${miss.length ? '缺 ' + esc(miss.join('/')) : '冲突齐了'} · 还没开稿</em></span>
+        <span class="hrow-tag chip ${miss.length ? 'wait' : 'ok'}">${miss.length ? '待补' : '可开稿'}</span>
+      </div>`;
+    }
+
+    const d = mine[0];
+    return `<div class="hrow topic" data-draft="${esc(d.id)}">
+      <span class="hrow-l"><b>${esc(title)}</b>
+        <em class="hsub">${esc(d.id)} · ${esc(d['阶段名'] || d['阶段'])} · ${d['字数'] || 0} 字</em></span>
+      <span class="hrow-bar">${stageBar(d, {cls:'sm', label:false})}</span>
+      <span class="hrow-tag chip">${esc(d['阶段'])} ${d['阶段序号']}/5</span>
     </div>`;
-    return;
-  }
-  host.innerHTML = HISTORY.map(msgHtml).join('');
-  scrollBottom();
+  }).join('');
+
+  return card('选题进度', rows, `${topics.length} 条在库 · 点开进对应窗口`);
 }
 
-function scrollBottom(){
-  const host = $msgs();
-  host.scrollTop = host.scrollHeight;
+/* ---------- 待办 ---------- */
+function todosCard(){
+  const todos = STATE['待办'] || [];
+  if(!todos.length){
+    return card('等你处理', '<div class="blank small">没有卡着的事。<br>可以去记一条灵感。</div>');
+  }
+
+  const rows = todos.map(t => {
+    const g = t['目标'] || {};
+    const href = g.kind === '稿件' ? 'draft.html?id=' + encodeURIComponent(g.id)
+      : g.kind === '选题' ? 'topics.html?id=' + encodeURIComponent(g.id)
+      : g.kind === '灵感' ? 'index.html'
+      : 'data.html';
+    return `<a class="td ${t['级别'] === 'red' ? 'red' : ''}" href="${href}">
+      <div class="td-t">${esc(t['类型'])}</div>
+      <div class="td-h">${esc(t['标题'])}</div>
+      <div class="td-n">${esc(t['说明'] || '')}</div>
+    </a>`;
+  }).join('');
+
+  return card('等你处理', `<div class="tdwrap">${rows}</div>`, todos.length + ' 件');
 }
 
-/* ---------- 发送 ---------- */
-async function send(){
-  if(SENDING) return;
-  const box = $('#input');
-  const text = box.value.trim();
-  if(!text) return;
+/* ---------- 日历 ---------- */
+function calendarCard(){
+  const logs = STATE['日志'] || [];
+  const byDay = {};
+  logs.forEach(l => {
+    const k = l['日期'];
+    (byDay[k] = byDay[k] || []).push(l);
+  });
 
-  if(!CUR.kind){
-    CUR = { kind:'', id:'', title:'与 AI 的对话', sub:'' };
-    $('#chTitle').textContent = CUR.title;
-    $('#chSub').textContent = '还没绑定到具体文件';
-    loadHistory();
+  const today = parseDay(todayStr());
+  const dow = (today.getDay() + 6) % 7;              // 周一 = 0
+  const lastMonday = shiftDay(today, -dow);
+  const WEEKS = 10;
+  const firstMonday = shiftDay(lastMonday, -7 * (WEEKS - 1));
+
+  const level = n => n === 0 ? 0 : n === 1 ? 1 : n <= 3 ? 2 : 3;
+
+  let cols = '';
+  for(let w = 0; w < WEEKS; w++){
+    let cells = '';
+    for(let i = 0; i < 7; i++){
+      const d = shiftDay(firstMonday, w * 7 + i);
+      if(d > today){ cells += '<i class="hm pad"></i>'; continue; }
+      const key = d.toISOString().slice(0, 10);
+      const n = (byDay[key] || []).length;
+      const cls = ['hm', 'l' + level(n)];
+      if(key === todayStr()) cls.push('today');
+      if(key === PICKDAY) cls.push('sel');
+      const tip = key + ' · ' + n + ' 件';
+      cells += `<i class="${cls.join(' ')}" data-day="${key}" title="${esc(tip)}"></i>`;
+    }
+    cols += `<div class="hcol7">${cells}</div>`;
   }
 
-  box.value = '';
-  autoGrow(box);
+  const day = PICKDAY || todayStr();
+  const list = (byDay[day] || []).slice().sort((a, b) => b['时间'].localeCompare(a['时间']));
+  const listHtml = list.length ? list.map(l => `
+    <div class="lg">
+      <span class="lg-t num">${esc((l['时间'] || '').slice(11))}</span>
+      <span class="lg-a">${esc(l['动作'])}<em>${esc(l['备注'] || '')}</em></span>
+      <span class="lg-o">${esc(l['对象'] || '')}</span>
+    </div>`).join('') :
+    `<div class="blank small">${day === todayStr() ? '今天还没记下什么。' : '这天没有记录。'}</div>`;
 
-  HISTORY.push({ role:'user', content: text });
-  saveHistory();
+  return card(`日历 · ${esc(dayLabel(day))}`, `
+    <div class="hmon">${cols}</div>
+    <div class="hlegend">
+      <span>近 ${WEEKS} 周</span>
+      <i class="hm l0"></i><i class="hm l1"></i><i class="hm l2"></i><i class="hm l3"></i>
+    </div>
+    <div class="hlogs">${listHtml}</div>`, '深浅 = 那天做了几件事');
+}
 
-  const host = $msgs();
-  if(!host.querySelector('.msg')){
-    host.innerHTML = '';
-  }
-  host.insertAdjacentHTML('beforeend', msgHtml({role:'user', content:text}));
-  const aiWrap = document.createElement('div');
-  aiWrap.className = 'msg ai';
-  aiWrap.innerHTML = '<div class="who">AI</div><div class="bubble"><div class="typing"><i></i><i></i><i></i></div></div>';
-  host.appendChild(aiWrap);
-  scrollBottom();
+/* ---------- 卡片壳 ---------- */
+function card(title, inner, note){
+  return `<section class="hcard">
+    <div class="hcard-h">
+      <b>${title}</b>
+      ${note ? `<span>${esc(note)}</span>` : ''}
+    </div>
+    ${inner}
+  </section>`;
+}
 
-  SENDING = true;
-  $('#send').disabled = true;
+/* ---------- 渲染 ---------- */
+function render(){
+  $('#body').innerHTML = renderTop() + kpis() +
+    `<div class="hcols">
+      <div class="hcol wide">${accountsCard()}${topicsCard()}</div>
+      <div class="hcol narrow">${todosCard()}${calendarCard()}</div>
+    </div>`;
+  bind();
+}
 
-  const bubble = aiWrap.querySelector('.bubble');
-  let painted = '';
-
-  try{
-    const payload = HISTORY.filter(m => !m._sys).map(m => ({role:m.role, content:m.content}));
-    await chatStream(CUR.kind, CUR.id, payload, {
-      onDelta(full){
-        painted = full;
-        bubble.innerHTML = renderMd(full);
-        scrollBottom();
-      },
-      onDone(writes, full){
-        const clean = (full || painted || '').trim();
-        bubble.innerHTML = renderMd(clean) || '<span style="color:#B5B5B5">（这次没说话）</span>';
-        HISTORY.push({ role:'assistant', content: clean });
-        saveHistory();
-
-        if(writes && writes.length){
-          const bar = document.createElement('div');
-          bar.className = 'writes';
-          bar.innerHTML = `<div class="wt">AI 想改 <b>${writes.length}</b> 处：${
-            writes.map(w => esc(w.kind + ' ' + w.id)).join('、')}</div>
-            <button class="btn btn-sm btn-primary">应用</button>`;
-          bar.querySelector('button').addEventListener('click', async (ev) => {
-            ev.target.disabled = true;
-            const r = await applyWrites(writes);
-            ev.target.textContent = r.fail ? ('失败 ' + r.fail) : '已写入';
-            toast(r.fail ? '有 ' + r.fail + ' 处没写进去' : '已写进文件');
-            if(!r.fail){
-              STATE = await getJSON(withIdent('/api/state'));
-              renderSide(STATE, 'work');
-              renderQueue();
-            }
-          });
-          aiWrap.appendChild(bar);
-        }
-        scrollBottom();
-      }
+function bind(){
+  document.querySelectorAll('.hm[data-day]').forEach(el => {
+    el.addEventListener('click', () => {
+      PICKDAY = el.dataset.day;
+      render();
     });
-  }catch(e){
-    bubble.innerHTML = `<span style="color:#D9474C">${esc(e.message)}</span>`;
-    HISTORY.push({ role:'assistant', content:'（出错了：' + e.message + '）' });
-    saveHistory();
-  }finally{
-    SENDING = false;
-    $('#send').disabled = false;
-    box.focus();
-  }
-}
+  });
 
-/* ---------- AI 未配置提示 ---------- */
-function renderBanner(){
-  const host = $('#aiBanner');
-  if(!STATE) return;
-  const ai = STATE['AI'] || {};
-  if(ai['可用']){ host.innerHTML = ''; return; }
-  host.innerHTML = `<div class="banner">
-    <b>还没配模型，现在聊不了。</b><br>
-    在项目根目录建一个 <code>本地配置.json</code>，写
-    <code>{"api_key": "sk-..."}</code>；要换接口再加 <code>"接口"</code> 和 <code>"模型名"</code>。改完重启服务。<br>
-    这个文件已经在 .gitignore 里，不会被提交。
-  </div>`;
+  document.querySelectorAll('.hrow[data-draft]').forEach(el => {
+    el.addEventListener('click', () => {
+      location.href = 'draft.html?id=' + encodeURIComponent(el.dataset.draft);
+    });
+  });
+
+  document.querySelectorAll('.hrow[data-topic]').forEach(el => {
+    el.addEventListener('click', () => {
+      location.href = 'topics.html?id=' + encodeURIComponent(el.dataset.topic);
+    });
+  });
 }
 
 /* ---------- 启动 ---------- */
 (async function init(){
   STATE = await boot('work');
   if(!STATE){
-    offlineBlock($('#qList'));
+    offlineBlock($('#body'));
     return;
   }
-  renderBanner();
-  renderQueue();
-  renderMsgs();
-
-  const box = $('#input');
-  box.addEventListener('input', () => autoGrow(box));
-  box.addEventListener('keydown', (e) => {
-    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
-  });
-  $('#send').addEventListener('click', send);
-
-  const p = new URLSearchParams(location.search);
-  const k = p.get('kind'), i = p.get('id');
-  if(k && i && findItem(k, i)) select(k, i);
+  PICKDAY = todayStr();
+  render();
 })();
 </script>
 </body>

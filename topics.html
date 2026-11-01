@@ -20,6 +20,7 @@
   .dr-row:hover{border-color:#E3E3E3;background:#FCFCFC}
   .dr-row .g{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dr-row .m{font-size:9.5px;color:#B5B5B5;white-space:nowrap}
+  .dr-bar{width:54px;flex:none}
 </style>
 </head>
 <body>
@@ -155,17 +156,35 @@ function renderPane(){
       ${drafts.length ? `
         <div class="sec-t">衍生稿件 ${drafts.length}</div>
         <div class="drafts">
-          ${drafts.map(d => `<a class="dr-row" href="index.html?kind=${encodeURIComponent('稿件')}&id=${encodeURIComponent(d.id)}">
+          ${drafts.map(d => `<a class="dr-row" href="draft.html?id=${encodeURIComponent(d.id)}">
             <span class="g">${esc(d.id)} · ${esc(d['选题标题'] || '')}</span>
-            <span class="m">${esc(d['状态'] || '')} · ${esc(d['版本'] || 'v1')}</span>
+            <span class="dr-bar">${stageBar(d, {cls:'sm', label:false})}</span>
+            <span class="m">${esc(d['阶段'] || '讨论')} ${d['阶段序号'] || 1}/5</span>
           </a>`).join('')}
         </div>` : ''}
 
       <div style="display:flex;gap:8px;margin-top:18px">
-        <a class="btn btn-primary" href="index.html?kind=${encodeURIComponent('选题')}&id=${encodeURIComponent(t.id)}">去工作台聊这条</a>
+        <button class="btn btn-primary" id="openBtn">${drafts.length ? '继续写这篇 →' : '开一篇稿，开始讨论 →'}</button>
         <button class="btn" id="saveBtn">保存字段</button>
       </div>
     </div>`;
+
+  $('#openBtn').addEventListener('click', async (ev) => {
+    if(drafts.length){
+      location.href = 'draft.html?id=' + encodeURIComponent(drafts[0].id);
+      return;
+    }
+    ev.target.disabled = true;
+    ev.target.textContent = '正在开稿…';
+    try{
+      const r = await postJSON('/api/new_draft', { '选题': t.id });
+      location.href = 'draft.html?id=' + encodeURIComponent(r.item.id);
+    }catch(e){
+      toast('没开成：' + e.message);
+      ev.target.disabled = false;
+      ev.target.textContent = '开一篇稿，开始讨论 →';
+    }
+  });
 
   $('#saveBtn').addEventListener('click', async (ev) => {
     ev.target.disabled = true;
@@ -190,6 +209,9 @@ function renderPane(){
 (async function init(){
   STATE = await boot('topics');
   if(!STATE){ offlineBlock($('#list')); return; }
+  // 从首页点过来会带 ?id=tp-002
+  const want = new URLSearchParams(location.search).get('id');
+  if(want && (STATE['选题'] || []).some(t => t.id === want)) PICK = want;
   renderList();
   renderPane();
 })();

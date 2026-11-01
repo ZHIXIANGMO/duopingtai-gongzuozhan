@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>稿件 · 内容矩阵</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+
+  <main class="main draft">
+    <section class="dfile">
+      <div class="dhead">
+        <div class="dh-l">
+          <a class="dback" href="index.html">← 回到今天</a>
+          <div class="dtitle" id="dTitle">读不到稿件</div>
+          <div class="dsub" id="dSub"></div>
+        </div>
+        <div class="top-right">
+          <div class="sync"><span id="syncDot" class="dot"></span><span id="syncText"></span></div>
+        </div>
+      </div>
+
+      <div class="dstage" id="dStage"></div>
+      <div id="dPanel"></div>
+    </section>
+
+    <section class="chat">
+      <div class="chat-head">
+        <div class="ch-l">
+          <div class="ch-t" id="chTitle">—</div>
+          <div class="ch-s" id="chSub">这一阶段想干什么，直接说</div>
+        </div>
+      </div>
+      <div class="msgs" id="msgs"></div>
+      <div class="composer">
+        <div id="aiBanner"></div>
+        <div class="cbox">
+          <textarea id="input" rows="1" placeholder="说你想干什么…"></textarea>
+          <div class="crow">
+            <span class="hint">Enter 发送 · Shift + Enter 换行</span>
+            <button class="send" id="send" title="发送">
+              <svg viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="assets/app.js"></script>
+<script>
+let STATE = null;
+let D = null;              // 当前稿件
+let TOPIC = null;          // 它挂的选题
+let HISTORY = [];
+let SENDING = false;
+
+const DRAFT_ID = new URLSearchParams(location.search).get('id') || '';
+
+/* 每个阶段的打开方式不一样 */
+const OPENERS = {
+  '讨论': '这条还在讨论。把你想说的倒出来，我来挑哪些能用、哪些是空的。素材够了我就写初稿。',
+  '待审': '初稿在这儿。想改哪段直接说，左边也能自己改。改完我就把稿子推去配图。',
+  '配图': '到配图了。说说想要什么调性，或者我先给三版配图思路你挑。',
+  '排版': '排版阶段。先定开头三行和配图位置，还是你想先看整篇节奏？',
+  '复盘': '发出去了。数据贴给我，或者我按现有投放数据给个判断：哪句留住了人。'
+};
+
+const NEXT_LABEL = {
+  '讨论': '初稿有了，去审 →',
+  '待审': '审过了，进配图 →',
+  '配图': '图定了，去排版 →',
+  '排版': '发出去了，进复盘 →',
+  '复盘': ''
+};
+
+function curStage(){
+  return (D && D['阶段']) || '讨论';
+}
+
+function redoNow(){
+  return (D && D['待重做']) || [];
+}
+
+function keyOf(){ return 'chat:稿件:' + DRAFT_ID; }
+
+function loadHistory(){
+  try{
+    const raw = localStorage.getItem(keyOf());
+    HISTORY = raw ? JSON.parse(raw) : [];
+  }catch(e){ HISTORY = []; }
+  if(!HISTORY.length){
+    HISTORY = [{ role:'assistant', content: OPENERS[curStage()] || OPENERS['讨论'], _sys:true }];
+  }
+}
+function saveHistory(){
+  try{ localStorage.setItem(keyOf(), JSON.stringify(HISTORY.slice(-40))); }catch(e){}
+}
+
+/* ---------- 头部 ---------- */
+function renderHead(){
+  $('#dTitle').textContent = D['选题标题'] || D.id;
+  const bits = [D.id, (D['版本'] || 'v1'), D['字数'] + ' 字'];
+  if(TOPIC) bits.push(TOPIC.id);
+  $('#dSub').innerHTML = bits.map(esc).join(' · ') +
+    (D['待重做'].length ? ` · <b style="color:#D9474C">${esc(D['待重做'].join(' / '))} 待重做</b>` : '');
+
+  $('#dStage').innerHTML = stageBar(D, {});
+  bindStage($('#dStage'), D, jump);
+}
+
+/* ---------- 阶段面板 ---------- */
+function sec(title, html, note){
+  return `<div class="dsec">
+    <div class="dsec-t">${esc(title)}${note ? `<span>${esc(note)}</span>` : ''}</div>
+    ${html}
+  </div>`;
+}
+
+function conflictMini(){
+  if(!TOPIC) return '';
+  const rows = CONFLICT_FIELDS.map(f => {
+    const v = TOPIC[f];
+    const miss = isBlank(v);
+    return `<div class="cfx ${miss ? 'miss' : ''}">
+      <span class="cfx-k">${esc(f)}</span>
+      <span class="cfx-v">${miss ? '还没填' : esc(v)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="cfx-wrap">${rows}</div>`;
+}
+
+function panelDiscuss(){
+  const detail = TOPIC ? sectionOf(TOPIC['正文'], '必须写进去的细节') : '';
+  return `
+    ${TOPIC ? sec('冲突四格', conflictMini(), '填不全，写出来是空的') : ''}
+    ${detail ? sec('必须写进去的细节', `<div class="dbox">${renderMd(detail)}</div>`) :
+      sec('必须写进去的细节', '<div class="dbox muted">还空着。这段是 AI 唯一能用的真实素材，不给它，它只会编。</div>')}
+    ${sec('现在的正文', `<div class="dbox">${bodyText() ? renderMd(bodyText()) : '<span style="color:#B5B5B5">还没有初稿</span>'}</div>`)}
+    <div class="dtip">这一阶段就是聊。右边把想法说完，让 AI 写初稿，出来再往下推。</div>`;
+}
+
+/* 从一段正文里取某个 ## 小节 */
+function sectionOf(text, name){
+  for(const chunk of String(text || '').split(/^## /m)){
+    if(chunk.startsWith(name)) return chunk.slice(name.length).trim();
+  }
+  return '';
+}
+
+function bodyText(){
+  return sectionOf(D['正文'], '正文');
+}
+
+function panelJudge(){
+  return `
+    ${sec('正文', `<textarea class="dedit" id="fBody" rows="12">${esc(bodyText())}</textarea>
+      <div class="drow"><button class="btn btn-sm" id="saveBody">保存正文</button>
+      <span class="dtip" style="margin:0;align-self:center">改正文会把后面做过的配图/排版标成待重做</span></div>`, D['字数'] + ' 字')}
+    <div class="dtip">左边可以直接改，也可以在右边让 AI 改某一段。改到你觉得能发，就往下走。</div>`;
+}
+
+function panelStage(key, hint){
+  const redo = redoNow().indexOf(key) >= 0;
+  const content = sectionText(key);
+  return `
+    ${redo ? `<div class="dwarn">正文改过了，这版${esc(STAGE_LABEL[key])}对不上。重做一次会清掉旧的，旧稿留在 .历史/作废。</div>` : ''}
+    ${sec(STAGE_LABEL[key], `<textarea class="dedit" id="fSec" rows="9" placeholder="${esc(hint)}">${esc(content)}</textarea>
+      <div class="drow"><button class="btn btn-sm" id="saveSec">保存</button></div>`, content ? content.length + ' 字' : '还没写')}
+    <div class="dtip">也可以让 AI 直接写进这一节。它给的东西要你点「应用」才会落盘。</div>`;
+}
+
+function sectionText(name){
+  const raw = D['正文'] || '';
+  for(const chunk of raw.split(/^## /m)){
+    if(chunk.startsWith(name)) return chunk.slice(name.length).trim();
+  }
+  return '';
+}
+
+function panelReview(){
+  const pubs = (STATE['投放'] || []).filter(p => p['稿件'] === D.id);
+  const rows = pubs.map(p => `<div class="drow2">
+      <span class="drow2-d">${esc(p['发布日'])}</span>
+      <span class="drow2-a">${esc(p['账号名'])}</span>
+      <span class="drow2-n num">${fmt(p['阅读'])}</span>
+      <span class="drow2-n num">${fmt(p['互动'])}</span>
+    </div>`).join('') || '<div class="dbox muted">还没有投放记录。发布后在数据页手填，或者用书签脚本抓。</div>';
+
+  return `
+    ${pubs.length ? sec('这次发的数据', `<div class="dtbl">
+      <div class="drow2 h"><span class="drow2-d">日期</span><span class="drow2-a">账号</span>
+        <span class="drow2-n">阅读</span><span class="drow2-n">互动</span></div>${rows}</div>`) : sec('这次发的数据', rows)}
+    ${panelStage('复盘', '哪句留住了人？哪个平台不一样？下次改什么？')}`;
+}
+
+function renderPanel(){
+  const st = curStage();
+  const host = $('#dPanel');
+  let html = '';
+  if(st === '讨论') html = panelDiscuss();
+  else if(st === '待审') html = panelJudge();
+  else if(st === '配图') html = panelStage('配图', '封面写什么、放几张、什么调性。写完让 AI 按这个出图。');
+  else if(st === '排版') html = panelStage('排版', '开头三行、分段节奏、配图插在哪、平台差异。');
+  else html = panelReview();
+
+  const next = NEXT_LABEL[st];
+  html += `<div class="dnext">
+    ${next ? `<button class="btn btn-primary" id="goNext">${esc(next)}</button>` : '<span class="dtip" style="margin:0">这条已经走完了。要改，点上面进度条退回哪一格。</span>'}
+    ${redoNow().length ? `<span class="dtip" style="margin:0">${esc(redoNow().join(' / '))} 待重做</span>` : ''}
+  </div>`;
+
+  host.innerHTML = html;
+  bindPanel();
+}
+
+function bindPanel(){
+  const fBody = $('#fBody');
+  if(fBody){
+    $('#saveBody').addEventListener('click', async ev => {
+      ev.target.disabled = true;
+      try{
+        await postJSON('/api/write', {kind:'稿件', id:D.id, '正文': replaceBodySection(fBody.value)});
+        await reload('正文存好了');
+      }catch(e){ toast('没存上：' + e.message); }
+      finally{ ev.target.disabled = false; }
+    });
+  }
+
+  const fSec = $('#fSec');
+  if(fSec){
+    $('#saveSec').addEventListener('click', async ev => {
+      ev.target.disabled = true;
+      try{
+        await postJSON('/api/section', {kind:'稿件', id:D.id, '小节': curStage(), '内容': fSec.value.trim()});
+        await reload('存好了');
+      }catch(e){ toast('没存上：' + e.message); }
+      finally{ ev.target.disabled = false; }
+    });
+  }
+
+  const go = $('#goNext');
+  if(go){
+    go.addEventListener('click', async () => {
+      const here = stageAt(D);
+      const target = STAGES[Math.min(here + 1, STAGES.length - 1)];
+      go.disabled = true;
+      try{
+        await setStage(D.id, target, '');
+        await reload('推进到 ' + STAGE_LABEL[target]);
+      }catch(e){ toast(e.message); go.disabled = false; }
+    });
+  }
+}
+
+/* 只换「## 正文」这一节，别的小节原样留着 */
+function replaceBodySection(text){
+  const raw = D['正文'] || '';
+  const parts = raw.split(/^## /m);
+  let hit = false;
+  const out = parts.map(chunk => {
+    if(!hit && chunk.startsWith('正文')){
+      hit = true;
+      return '正文\n\n' + String(text || '').trim() + '\n\n';
+    }
+    return chunk;
+  });
+  if(!hit) out.push('正文\n\n' + String(text || '').trim() + '\n');
+  return out.join('## ');
+}
+
+/* ---------- 跳阶段 ---------- */
+async function jump(stage){
+  if(!D || stage === D['阶段']) return;
+  const here = stageAt(D);
+  const to = STAGES.indexOf(stage);
+
+  if(to < here){
+    const after = STAGES.slice(to + 1).filter(s => (D['有产物'] || []).indexOf(s) >= 0);
+    const warn = after.length
+      ? `退回「${STAGE_LABEL[stage]}」。${after.map(s => STAGE_LABEL[s]).join('、')} 会标成待重做，回来时要重做一遍。`
+      : `退回「${STAGE_LABEL[stage]}」？`;
+    if(!confirm(warn)) return;
+  }
+
+  try{
+    await setStage(D.id, stage, to < here ? '手动退回' : '手动推进');
+    await reload('到 ' + STAGE_LABEL[stage] + ' 了');
+  }catch(e){ toast(e.message); }
+}
+
+/* ---------- 对话 ---------- */
+function msgHtml(m){
+  const ai = m.role !== 'user';
+  return `<div class="msg ${ai ? 'ai' : 'user'}">
+    <div class="who">${ai ? 'AI' : '你'}</div>
+    <div class="bubble">${renderMd(m.content)}</div>
+  </div>`;
+}
+
+function renderMsgs(){
+  const host = $('#msgs');
+  host.innerHTML = HISTORY.map(msgHtml).join('');
+  host.scrollTop = host.scrollHeight;
+}
+function scrollBottom(){
+  const host = $('#msgs');
+  host.scrollTop = host.scrollHeight;
+}
+
+async function send(){
+  if(SENDING || !D) return;
+  const box = $('#input');
+  const text = box.value.trim();
+  if(!text) return;
+
+  box.value = '';
+  autoGrow(box);
+
+  HISTORY.push({ role:'user', content: text });
+  saveHistory();
+
+  const host = $('#msgs');
+  if(!host.querySelector('.msg')) host.innerHTML = '';
+  host.insertAdjacentHTML('beforeend', msgHtml({role:'user', content:text}));
+  const aiWrap = document.createElement('div');
+  aiWrap.className = 'msg ai';
+  aiWrap.innerHTML = '<div class="who">AI</div><div class="bubble"><div class="typing"><i></i><i></i><i></i></div></div>';
+  host.appendChild(aiWrap);
+  scrollBottom();
+
+  SENDING = true;
+  $('#send').disabled = true;
+  const bubble = aiWrap.querySelector('.bubble');
+  let painted = '';
+
+  try{
+    const payload = HISTORY.filter(m => !m._sys).map(m => ({role:m.role, content:m.content}));
+    await chatStream('稿件', D.id, payload, {
+      onDelta(full){
+        painted = full;
+        bubble.innerHTML = renderMd(full);
+        scrollBottom();
+      },
+      onDone(writes, full){
+        const clean = (full || painted || '').trim();
+        bubble.innerHTML = renderMd(clean) || '<span style="color:#B5B5B5">（这次没说话）</span>';
+        HISTORY.push({ role:'assistant', content: clean });
+        saveHistory();
+
+        if(writes && writes.length){
+          const bar = document.createElement('div');
+          bar.className = 'writes';
+          bar.innerHTML = `<div class="wt">AI 想改 <b>${writes.length}</b> 处：${
+            writes.map(w => esc(w.kind + ' ' + w.id)).join('、')}</div>
+            <button class="btn btn-sm btn-primary">应用</button>`;
+          bar.querySelector('button').addEventListener('click', async ev => {
+            ev.target.disabled = true;
+            const r = await applyWrites(writes);
+            ev.target.textContent = r.fail ? ('失败 ' + r.fail) : '已写入';
+            toast(r.fail ? '有 ' + r.fail + ' 处没写进去' : '已写进文件');
+            if(!r.fail) await reload('');
+          });
+          aiWrap.appendChild(bar);
+        }
+        scrollBottom();
+      }
+    });
+  }catch(e){
+    bubble.innerHTML = `<span style="color:#D9474C">${esc(e.message)}</span>`;
+    HISTORY.push({ role:'assistant', content:'（出错了：' + e.message + '）' });
+    saveHistory();
+  }finally{
+    SENDING = false;
+    $('#send').disabled = false;
+    box.focus();
+  }
+}
+
+/* ---------- 重新拉数据 ---------- */
+async function reload(msg){
+  try{
+    STATE = await getJSON(withIdent('/api/state'));
+    renderSide(STATE, 'work');
+    D = (STATE['稿件'] || []).find(x => x.id === DRAFT_ID) || D;
+    if(D){
+      TOPIC = (STATE['选题'] || []).find(t => t.id === D['选题']) || null;
+      renderHead();
+      renderPanel();
+      $('#chTitle').textContent = D['选题标题'] || D.id;
+      $('#chSub').textContent = STAGE_LABEL[curStage()] + ' · ' + (D['字数'] || 0) + ' 字';
+      renderBanner();
+    }
+    if(msg) toast(msg);
+  }catch(e){ toast('刷新失败：' + e.message); }
+}
+
+function renderBanner(){
+  const host = $('#aiBanner');
+  const ai = (STATE && STATE['AI']) || {};
+  if(ai['可用']){ host.innerHTML = ''; return; }
+  host.innerHTML = `<div class="banner">
+    <b>还没配模型，现在聊不了。</b> 在根目录建 <code>本地配置.json</code>，写
+    <code>{"api_key": "sk-..."}</code>，改完重启服务。
+  </div>`;
+}
+
+/* ---------- 启动 ---------- */
+(async function init(){
+  STATE = await boot('work');
+  if(!STATE){
+    offlineBlock($('#dPanel'));
+    return;
+  }
+
+  D = (STATE['稿件'] || []).find(x => x.id === DRAFT_ID);
+  if(!D){
+    $('#dTitle').textContent = '没找到这篇稿子';
+    $('#dSub').textContent = DRAFT_ID ? ('id：' + DRAFT_ID) : '地址里没带 id';
+    $('#dPanel').innerHTML = '<div class="blank">从工作台点一篇稿件进来，地址会带上 ?id=dr-001。</div>';
+    $('#msgs').innerHTML = '';
+    return;
+  }
+
+  TOPIC = (STATE['选题'] || []).find(t => t.id === D['选题']) || null;
+  loadHistory();
+  renderHead();
+  renderPanel();
+  renderMsgs();
+  renderBanner();
+
+  $('#chTitle').textContent = D['选题标题'] || D.id;
+  $('#chSub').textContent = STAGE_LABEL[curStage()] + ' · ' + (D['字数'] || 0) + ' 字';
+
+  const box = $('#input');
+  box.addEventListener('input', () => autoGrow(box));
+  box.addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  $('#send').addEventListener('click', send);
+
+  // 从队列点某一格进来：直接落到那一步
+  const want = new URLSearchParams(location.search).get('stage');
+  if(want && STAGES.indexOf(want) >= 0 && want !== D['阶段']){
+    history.replaceState(null, '', 'draft.html?id=' + encodeURIComponent(DRAFT_ID));
+    jump(want);
+  }
+})();
+</script>
+</body>
+</html>
