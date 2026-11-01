@@ -156,8 +156,9 @@ function renderQueue(){
     html += `</div>`;
   }
 
+  const who = ((STATE && STATE['当前身份']) || {})['名称'] || '这个身份';
   host.innerHTML = html ||
-    '<div class="q-empty">这边是空的。<br>去 Obsidian 里记一条灵感，或者直接跟我说你想写什么。</div>';
+    `<div class="q-empty">${esc(who)} 名下还没有东西。<br>去 Obsidian 里记一条灵感，或者直接跟我说你想写什么。</div>`;
 
   host.querySelectorAll('.q-item').forEach(el => {
     el.addEventListener('click', () => select(el.dataset.kind, el.dataset.id));
@@ -287,7 +288,7 @@ async function send(){
             ev.target.textContent = r.fail ? ('失败 ' + r.fail) : '已写入';
             toast(r.fail ? '有 ' + r.fail + ' 处没写进去' : '已写进文件');
             if(!r.fail){
-              STATE = await getJSON('/api/state');
+              STATE = await getJSON(withIdent('/api/state'));
               renderSide(STATE, 'work');
               renderQueue();
             }

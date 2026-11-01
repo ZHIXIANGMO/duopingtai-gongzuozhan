@@ -75,6 +75,10 @@
 <script>
 let STATE = null;
 
+/* 从左下角名片点某个号进来时，只显示这个号的记录 */
+const ACC_FILTER = new URLSearchParams(location.search).get('acc')
+  || new URLSearchParams(location.search).get('账号') || '';
+
 function kpi(v, k, d){
   return `<div class="kpi"><div class="kv num">${v}</div><div class="kk">${k}</div>
     ${d ? `<div class="kd">${d}</div>` : ''}</div>`;
@@ -167,12 +171,17 @@ function renderWeeks(){
 }
 
 function renderTable(){
-  const rows = STATE['投放'] || [];
-  $('#mineCount').textContent = rows.length ? rows.length + ' 条' : '';
+  const all = STATE['投放'] || [];
+  const focus = ACC_FILTER ? (STATE['账号'] || []).find(a => a.id === ACC_FILTER) : null;
+  const rows = focus ? all.filter(r => r['账号'] === focus.id) : all;
+
+  $('#mineCount').innerHTML = focus
+    ? `只看 <b>${esc(focus['账号名'])}</b> · ${rows.length} 条 <a href="data.html" style="color:#B5B5B5;margin-left:6px">显示全部</a>`
+    : (rows.length ? rows.length + ' 条' : '');
 
   if(!rows.length){
     $('#table').innerHTML = `<tbody><tr><td style="text-align:center;color:#B5B5B5;padding:26px">
-      还没有投放记录
+      ${focus ? esc(focus['账号名']) + ' 还没有投放记录' : '还没有投放记录'}
     </td></tr></tbody>`;
     return;
   }
@@ -235,7 +244,7 @@ async function addRow(){
 }
 
 async function reload(){
-  STATE = await getJSON('/api/state');
+  STATE = await getJSON(withIdent('/api/state'));
   renderSide(STATE, 'data');
   renderTop();
   renderAccounts();

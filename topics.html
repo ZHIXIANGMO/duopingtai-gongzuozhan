@@ -174,7 +174,7 @@ function renderPane(){
         kind: '选题', id: t.id,
         '字段': { '标题候选': $('#fTitle').value.trim() }
       });
-      STATE = await getJSON('/api/state');
+      STATE = await getJSON(withIdent('/api/state'));
       renderSide(STATE, 'topics');
       renderList();
       renderPane();

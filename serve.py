@@ -19,7 +19,7 @@ import urllib.request
 import webbrowser
 from datetime import date, datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -441,26 +441,67 @@ def build_stats(state):
 
 # ---------------------------------------------------------------- 状态汇总
 
-def build_state():
+def id_list(raw):
+    """「目标身份」这类字段可能是多个 id，逗号、顿号、空格都认。"""
+    return [x for x in re.split(r"[,，、\s]+", str(raw or "")) if x]
+
+
+def belongs(raw, cur):
+    """空的算通用（谁都看得见），否则必须命中当前身份。"""
+    if is_blank(raw):
+        return True
+    return cur in id_list(raw)
+
+
+def build_state(ident_id=""):
     state = {}
     for kind in ("身份", "账号", "灵感", "选题", "稿件"):
         state[kind] = list_entity(kind)
     state["投放"] = read_pubs()
 
-    # 身份默认取设置里指定的那一个
-    want = settings().get("身份") or ""
+    all_idents = list(state["身份"])
+    all_accs = list(state["账号"])
+
+    # 当前身份：请求指定的 > 设置里的 > 第一个
+    want = str(ident_id or "").strip() or (settings().get("身份") or "")
     ident = None
-    for p in state["身份"]:
+    for p in all_idents:
         if p["id"] == want:
             ident = p
             break
-    if ident is None and state["身份"]:
-        ident = state["身份"][0]
+    if ident is None and all_idents:
+        ident = all_idents[0]
+    cur = ident["id"] if ident else ""
+
+    # 身份清单：左下角切换器要用，永远给全量，不跟着当前身份收窄
+    pub_by_acc = {}
+    for row in state["投放"]:
+        pub_by_acc[row.get("账号") or ""] = pub_by_acc.get(row.get("账号") or "", 0) + 1
+    drafts_by_id = {}
+    for d in state["稿件"]:
+        drafts_by_id[d.get("身份") or ""] = drafts_by_id.get(d.get("身份") or "", 0) + 1
+
+    roster = []
+    for p in all_idents:
+        accs = [a for a in all_accs if a.get("身份") == p["id"]]
+        roster.append({
+            "id": p["id"],
+            "名称": p.get("名称", ""),
+            "定位": p.get("定位", ""),
+            "稿件数": drafts_by_id.get(p["id"], 0),
+            "平台": [{
+                "id": a["id"],
+                "平台": a.get("平台", ""),
+                "账号名": a.get("账号名", ""),
+                "状态": a.get("状态", "正常"),
+                "投放数": pub_by_acc.get(a["id"], 0),
+            } for a in accs],
+        })
 
     # 补一层关联显示用的小字段，省得前端自己 join
     draft_map = dict((d["id"], d) for d in state["稿件"])
     topic_map = dict((t["id"], t) for t in state["选题"])
-    acc_map = dict((a["id"], a) for a in state["账号"])
+    acc_map = dict((a["id"], a) for a in all_accs)
 
     for d in state["稿件"]:
         t = topic_map.get(d.get("选题"), {})
@@ -470,6 +511,7 @@ def build_state():
     for t in state["选题"]:
         t["稿件"] = [d["id"] for d in state["稿件"] if d.get("选题") == t["id"]]
         t["缺冲突"] = [f for f in CONFLICT_FIELDS if is_blank(t.get(f))]
+        t["归属未定"] = is_blank(t.get("目标身份"))
 
     for p in state["投放"]:
         a = acc_map.get(p["账号"], {})
@@ -480,7 +522,19 @@ def build_state():
             p["标题"] = d.get("选题标题") or p["标题"]
         p["新鲜"] = days_since(p.get("更新于")) <= 7
 
+    # ---- 按当前身份收窄。灵感不跟身份走：随手记的时候还没决定给谁 ----
+    if cur:
+        mine = [a["id"] for a in all_accs if a.get("身份") == cur]
+        state["账号"] = [a for a in all_accs if a.get("身份") == cur]
+        state["选题"] = [t for t in state["选题"] if belongs(t.get("目标身份"), cur)]
+        state["稿件"] = [d for d in state["稿件"] if belongs(d.get("身份"), cur)]
+        state["投放"] = [p for p in state["投放"] if p.get("账号") in mine]
+    else:
+        state["账号"] = all_accs
+
     state["当前身份"] = ident
+    state["身份清单"] = roster
+    state["身份总数"] = len(roster)
     state["待办"] = build_todos(state)
     state["统计"] = build_stats(state)
 
@@ -729,10 +783,13 @@ class Handler(SimpleHTTPRequestHandler):
         return json.loads(self.rfile.read(size).decode("utf-8") or "{}")
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        q = parse_qs(parsed.query)
         try:
             if path == "/api/state":
-                return self._json({"ok": True, **build_state()})
+                who = (q.get("ident") or q.get("身份") or [""])[0]
+                return self._json({"ok": True, **build_state(who)})
             if path in ("/", "/index.html"):
                 return self._serve("index.html")
         except Exception as exc:
@@ -778,6 +835,7 @@ class Handler(SimpleHTTPRequestHandler):
         p = self._body()
         kind = str(p.get("kind") or "全局")
         item_id = str(p.get("id") or "")
+        ident_id = str(p.get("身份") or "")
         history = p.get("messages") or []
 
         self.send_response(200)
@@ -793,7 +851,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         full = ""
         try:
-            state = build_state()
+            state = build_state(ident_id)
             messages = build_messages(state, kind, item_id, history)
             for piece in stream_model(messages):
                 full += piece
