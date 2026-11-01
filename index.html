@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>总览 · 橘子头内容工作站</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<div class="app">
+  <!-- ========== 左导航 ========== -->
+  <aside class="side">
+    <div class="brand">
+      <div class="mark">🍊</div>
+      <div>
+        <div class="name">橘子头</div>
+        <div class="sub">CONTENT DESK</div>
+      </div>
+    </div>
+
+    <div class="nav-label">工作站</div>
+    <nav class="nav">
+      <a class="nav-item on" href="index.html">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
+        总览
+      </a>
+      <a class="nav-item" href="pipeline.html">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.8"/><rect x="9.5" y="4" width="5" height="11" rx="1.8"/><rect x="16" y="4" width="5" height="7" rx="1.8"/></svg>
+        流水线<span class="n" data-count="pipeline">0</span>
+      </a>
+      <a class="nav-item" href="data.html">
+        <svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3.5-4.5 3 2.5L20 7"/></svg>
+        数据<span class="n" data-count="week">0</span>
+      </a>
+    </nav>
+
+    <div class="side-foot">
+      <div class="me">
+        <div class="me-top">
+          <div class="me-av">🍊</div>
+          <div>
+            <div class="me-name">橘子头</div>
+            <div class="me-role">AI × 个人知识管理</div>
+          </div>
+        </div>
+        <div class="me-stats">
+          <div><b id="meWeek">—</b><span>本周已发</span></div>
+          <div><b id="meWait">—</b><span>等你</span></div>
+          <div><b id="meRead">—</b><span>总阅读</span></div>
+        </div>
+        <div class="open-note">数据源 · <b>数据/发布记录.csv</b></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========== 主区 ========== -->
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb"><b>总览</b> / 今天</div>
+      <div class="top-right">
+        <div class="sync"><i class="dot loading" id="syncDot"></i><span id="syncText">连接中</span></div>
+        <button class="icon-btn" id="btnReload" title="刷新">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.6 5.9"/><path d="M20 5v6h-6"/></svg>
+        </button>
+        <div class="avatar">🍊</div>
+      </div>
+    </div>
+
+    <!-- ---------- 封面 ---------- -->
+    <section class="hero">
+      <div class="art-wrap">
+        <svg class="hero-art" viewBox="0 0 320 330" aria-label="正在工作的角色">
+          <defs>
+            <linearGradient id="gWarm" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#FDF6F1"/>
+              <stop offset="1" stop-color="#F7F1F8"/>
+            </linearGradient>
+          </defs>
+
+          <circle cx="160" cy="164" r="126" fill="url(#gWarm)"/>
+          <circle cx="160" cy="164" r="137" fill="none" stroke="#F1EAE5" stroke-width="1.2" stroke-dasharray="2 7"/>
+
+          <!-- 漂浮装饰 -->
+          <g class="sp-1" opacity=".8">
+            <path d="M64 92l2.6 7.4 7.4 2.6-7.4 2.6L64 112l-2.6-7.4L54 102l7.4-2.6z" fill="#FF5A5F"/>
+          </g>
+          <g class="sp-2" opacity=".9">
+            <path d="M258 154l2.2 6.2 6.2 2.2-6.2 2.2-2.2 6.2-2.2-6.2-6.2-2.2 6.2-2.2z" fill="#9FB2C4"/>
+          </g>
+          <g class="sp-3" opacity=".55">
+            <circle cx="252" cy="248" r="4.5" fill="#FF5A5F"/>
+            <circle cx="78" cy="206" r="3.5" fill="#9FB2C4"/>
+          </g>
+
+          <!-- 对话气泡 -->
+          <path d="M221 54H277a15 15 0 0115 15v14a15 15 0 01-15 15h-37l-15 12V98h-4a15 15 0 01-15-15V69a15 15 0 0115-15z"
+                fill="#fff" stroke="#141414" stroke-width="2.2" stroke-linejoin="round"/>
+          <circle class="bd-1" cx="238" cy="76" r="3.4" fill="#141414"/>
+          <circle class="bd-2" cx="250" cy="76" r="3.4" fill="#141414"/>
+          <circle class="bd-3" cx="262" cy="76" r="3.4" fill="#FF5A5F"/>
+
+          <!-- 桌子 -->
+          <rect x="26" y="284" width="268" height="14" rx="7" fill="#FBF8F5" stroke="#141414" stroke-width="2.2"/>
+
+          <!-- 杯子 -->
+          <g>
+            <path class="steam-1" d="M256 250c-3.5-5 3.5-7 0-12" stroke="#C9C9C9" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path class="steam-2" d="M266 248c-3.5-5.5 3.5-7.5 0-13" stroke="#D6D6D6" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path class="steam-3" d="M276 250c-3.5-5 3.5-7 0-12" stroke="#C9C9C9" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path d="M248 258h34v20a7 7 0 01-7 7h-20a7 7 0 01-7-7z" fill="#fff" stroke="#141414" stroke-width="2.2" stroke-linejoin="round"/>
+            <path d="M250 265h30" stroke="#FFD3CE" stroke-width="3.2" stroke-linecap="round"/>
+            <path d="M282 263c10 0 10 13 0 13" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+          </g>
+
+          <!-- 脖子 -->
+          <path d="M150 158v32M172 158v32" stroke="#141414" stroke-width="2.2" stroke-linecap="round"/>
+
+          <!-- 身体 -->
+          <path d="M86 284v-46c0-30 33-52 74-52s74 22 74 52v46z" fill="#FBFAF8" stroke="#141414" stroke-width="2.4" stroke-linejoin="round"/>
+          <path d="M144 188c8 10 24 10 32 0" stroke="#FF5A5F" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+
+          <!-- 头 -->
+          <g class="head-g">
+            <ellipse cx="160" cy="118" rx="43" ry="45" fill="#fff" stroke="#141414" stroke-width="2.4"/>
+            <path d="M117 116c-6-1-8 8 0 10" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <path d="M203 116c6-1 8 8 0 10" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <path d="M118 110c-3-38 16-51 42-51s45 13 42 51c-3-14-9-20-16-17-5-15-19-9-26 2-8-12-25-6-30 6-5-4-9 0-12 9z" fill="#141414"/>
+            <path d="M136 100c7-4 15-3 19 1" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <path d="M165 101c5-4 13-5 19-1" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <circle cx="141" cy="124" r="13.5" fill="none" stroke="#141414" stroke-width="2.2"/>
+            <circle cx="179" cy="124" r="13.5" fill="none" stroke="#141414" stroke-width="2.2"/>
+            <path d="M154.5 124h11" stroke="#141414" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M127.5 121l-9-2M192.5 121l9-2" stroke="#141414" stroke-width="2" stroke-linecap="round"/>
+            <g class="eyes-g">
+              <circle cx="141" cy="124" r="3.8" fill="#141414"/>
+              <circle cx="179" cy="124" r="3.8" fill="#141414"/>
+            </g>
+            <path d="M160 130c-2 6-4 9-8 10" stroke="#141414" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M152 149c5 5 11 5 16 0" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="125" cy="138" rx="6.5" ry="3.6" fill="#FFDBD6" opacity=".85"/>
+            <ellipse cx="195" cy="138" rx="6.5" ry="3.6" fill="#FFDBD6" opacity=".85"/>
+          </g>
+
+          <!-- 手臂 -->
+          <path d="M94 234c-7 20 6 38 28 42" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+          <path d="M226 234c7 18-4 32-16 36" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+
+          <!-- 本子 -->
+          <rect x="138" y="262" width="84" height="20" rx="5" fill="#FFFDF9" stroke="#141414" stroke-width="2.2"/>
+          <path d="M148 269h44M148 275h26" stroke="#DCDCDC" stroke-width="2" stroke-linecap="round"/>
+          <path d="M210 262h8v14h-8z" fill="#FF5A5F" opacity=".8"/>
+
+          <!-- 写字的手 + 笔 -->
+          <g class="hand-g">
+            <path d="M214 248l-24 22" stroke="#141414" stroke-width="3.2" stroke-linecap="round"/>
+            <path d="M195 265l-5 5" stroke="#FF5A5F" stroke-width="3.6" stroke-linecap="round"/>
+            <ellipse cx="209" cy="252" rx="10.5" ry="8" fill="#fff" stroke="#141414" stroke-width="2.2" transform="rotate(-30 209 252)"/>
+          </g>
+          <ellipse cx="134" cy="268" rx="10" ry="7.5" fill="#fff" stroke="#141414" stroke-width="2.2"/>
+        </svg>
+
+        <div class="ai-pill">
+          <div class="row"><i class="pdot"></i><div class="pt" id="aiTitle">AI 待命中</div></div>
+          <div class="ps" id="aiSub">读一遍手上的稿子</div>
+          <div class="pbar"><i></i></div>
+        </div>
+      </div>
+
+      <div class="hero-r">
+        <div class="hi">Hi 橘子头，</div>
+        <h1 class="h1" id="h1"><span class="num">0</span> 篇已发布，<em>还没到本周目标</em></h1>
+        <div class="lede" id="lede">—</div>
+
+        <div class="goal">
+          <div class="goal-top">
+            <b>本周发布</b>
+            <span id="weekRange">—</span>
+          </div>
+          <div class="goal-bar"><i id="goalBar" style="width:0%"></i></div>
+          <div class="goal-meta">
+            <div><b id="mPub">—</b><span>本周已发 / 目标</span></div>
+            <div><b id="mRead">—</b><span>本周阅读</span></div>
+            <div><b id="mInter">—</b><span>本周互动</span></div>
+            <div><b id="mFans">—</b><span>本周涨粉</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 本周节奏 ---------- -->
+    <div class="sec-head">
+      <h2>本周</h2><span>横向比上周，纵向比最近的节奏</span>
+      <span class="more"><a href="data.html">看全部数据 →</a></span>
+    </div>
+    <section class="charts">
+      <div class="card">
+        <div class="card-h"><b>这周发在哪几天</b><span id="wbTip">七天</span></div>
+        <div class="wb" id="wb"></div>
+        <div class="card-foot" id="wbFoot"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><b>近六周发布量</b><span>篇 / 周</span></div>
+        <div class="wks" id="wks"></div>
+        <div class="card-foot" id="wksFoot"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><b>本周发在哪个平台</b><span>篇数 · 阅读</span></div>
+        <div class="cbars" id="plat"></div>
+        <div class="cstats" id="platStats"></div>
+      </div>
+    </section>
+
+    <!-- ---------- 待办 ---------- -->
+    <div class="sec-head">
+      <h2>等你的</h2><span id="todoCount">·</span>
+      <span class="more"><a href="pipeline.html">去流水线 →</a></span>
+    </div>
+    <div class="todo" id="todo"></div>
+
+    <!-- ---------- 最近发布 ---------- -->
+    <div class="sec-head">
+      <h2>最近发的</h2><span>点开看单篇明细</span>
+      <span class="more"><a href="data.html">全部 20 条 →</a></span>
+    </div>
+    <div class="card" style="padding:16px 16px 6px">
+      <div class="table-wrap">
+        <table class="tb">
+          <thead><tr>
+            <th class="tl">日期</th><th class="tl">标题</th><th class="tl">平台</th>
+            <th>阅读</th><th>点赞</th><th>收藏</th><th>评论</th><th>互动率</th>
+          </tr></thead>
+          <tbody id="recent"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="assets/app.js"></script>
+<script>
+function renderHero(s){
+  const w = s['本周'];
+  const left = Math.max(w['目标'] - w['篇数'], 0);
+
+  document.getElementById('h1').innerHTML = left
+    ? `<span class="num">${w['篇数']}</span> 篇已发布，<em>还差 ${left} 篇</em>`
+    : `<span class="num">${w['篇数']}</span> 篇已发布，<em>目标达成</em>`;
+
+  document.getElementById('lede').textContent = left
+    ? `按每周 ${w['目标']} 篇的节奏，还剩 ${w['剩几天']} 天。上周发了 ${w['上周篇数']} 篇。`
+    : `这周提前收工，比上周多 ${w['篇数'] - w['上周篇数']} 篇。`;
+
+  document.getElementById('weekRange').textContent = w['标签'] + ' · 第 ' + w['第几天'] + ' 天';
+  document.getElementById('goalBar').style.width = Math.min(w['完成率'], 100) + '%';
+
+  document.getElementById('mPub').innerHTML = `${w['篇数']}<small>/${w['目标']}</small>`;
+  document.getElementById('mRead').textContent = fmt(w['阅读']);
+  document.getElementById('mInter').textContent = fmt(w['互动']);
+  document.getElementById('mFans').textContent = fmt(w['涨粉']);
+}
+
+function renderWeekBars(s){
+  const days = s['每日'];
+  const max = Math.max(1, ...days.map(d => d['篇数']));
+  const host = document.getElementById('wb');
+
+  host.innerHTML = days.map(d => {
+    const n = d['篇数'];
+    const h = n ? Math.max(12, Math.round(n / max * 86)) : (d['未到'] ? 4 : 4);
+    const cls = n ? (d['今天'] ? 'today' : '') : 'pending';
+    return `<div class="wb-col">
+      <div class="wb-n ${n ? '' : 'zero'}">${n || '·'}</div>
+      <div class="wb-bar ${cls}" style="height:${h}px"></div>
+      <div class="wb-lb ${d['今天'] ? 'today' : ''}">${d['周']}</div>
+    </div>`;
+  }).join('');
+
+  const w = s['本周'];
+  const done = days.filter(d => d['篇数'] > 0).length;
+  document.getElementById('wbTip').textContent = `发了 ${done} 天 · 共 ${w['篇数']} 篇`;
+  document.getElementById('wbFoot').textContent = w['剩几天'] > 0
+    ? `还剩 ${w['剩几天']} 天：要追上 ${w['目标']} 篇的目标，每天得发 ${Math.ceil(Math.max(w['目标'] - w['篇数'], 0) / Math.max(w['剩几天'], 1))} 篇。`
+    : `这周结束了，本周共 ${w['篇数']} 篇。`;
+}
+
+function renderWeeks(s){
+  const ws = s['周趋势'];
+  const max = Math.max(1, ...ws.map(w => w['篇数']));
+  document.getElementById('wks').innerHTML = ws.map(w => `
+    <div class="wk-col">
+      <div class="wk-n ${w['本周'] ? 'now' : ''}">${w['篇数']}</div>
+      <div class="wk-bar ${w['本周'] ? 'now' : ''}" style="height:${Math.max(6, Math.round(w['篇数'] / max * 88))}px"></div>
+      <div class="wk-lb">${w['本周'] ? '本周' : w['标签']}</div>
+    </div>`).join('');
+
+  const prev = ws[ws.length - 2]['篇数'], cur = ws[ws.length - 1]['篇数'];
+  const avg = Math.round(ws.reduce((a, b) => a + b['篇数'], 0) / ws.length * 10) / 10;
+  document.getElementById('wksFoot').textContent =
+    `六周平均每周 ${avg} 篇。这周比上周${cur >= prev ? '多' : '少'} ${Math.abs(cur - prev)} 篇。`;
+}
+
+function renderPlatform(s){
+  const start = s['本周']['起'];
+  const rows = s['明细'].filter(r => r['日期'] >= start);
+  const map = {};
+  rows.forEach(r => {
+    const p = map[r['平台']] || (map[r['平台']] = {name:r['平台'], n:0, read:0, inter:0});
+    p.n++; p.read += r['阅读']; p.inter += r['互动'];
+  });
+  const list = Object.values(map).sort((a, b) => b.read - a.read);
+  const maxRead = Math.max(1, ...list.map(p => p.read));
+  const colors = {'小红书':'#FF5A5F','公众号':'#3FBF7F'};
+
+  document.getElementById('plat').innerHTML = list.length ? list.map(p => `
+    <div class="cbar">
+      <div class="ct"><span>${esc(p.name)}</span><b>${p.n} 篇 · ${fmt(p.read)}</b></div>
+      <div class="ctrack"><i style="width:${Math.round(p.read / maxRead * 100)}%;background:${colors[p.name] || '#141414'}"></i></div>
+    </div>`).join('') : `<div class="blank" style="padding:18px 0">这周还没发东西</div>`;
+
+  const read = list.reduce((a, p) => a + p.read, 0);
+  const inter = list.reduce((a, p) => a + p.inter, 0);
+  document.getElementById('platStats').innerHTML = `
+    <div><b>${fmt(read)}</b><span>本周阅读</span></div>
+    <div><b>${read ? pct(inter * 100 / read) : '—'}</b><span>互动率</span></div>`;
+}
+
+function renderTodo(board){
+  const items = (board.items || []).map(i => Object.assign({
+    '待你确认': i['待你确认'] || '无', '优先级': i['优先级'] || 'P2',
+    '卡住天数': Number(i['卡住天数'] || 0)
+  }, i));
+  const waiting = items.filter(i => i['待你确认'] !== '无');
+  const host = document.getElementById('todo');
+
+  document.getElementById('todoCount').textContent = waiting.length
+    ? `· 共 ${waiting.length} 件卡在你手上`
+    : '· 没有卡在你手上的';
+
+  if(!waiting.length){
+    host.innerHTML = `<div class="todo-empty">四处闸门都放行了，我在往下跑</div>`;
+    return;
+  }
+
+  const sorted = waiting.sort((a, b) =>
+    GATE_ORDER.indexOf(a['待你确认']) - GATE_ORDER.indexOf(b['待你确认']));
+
+  host.innerHTML = sorted.slice(0, 3).map(i => {
+    const g = i['待你确认'];
+    const info = GATE_INFO[g] || {bg:'#F5F5F5'};
+    return `<a class="todo-item" href="pipeline.html?id=${encodeURIComponent(i.id)}">
+      <div class="todo-n" style="background:${info.bg}">${esc(i.id)}</div>
+      <div class="todo-b">
+        <div class="todo-t">${esc(i['标题'])}</div>
+        <div class="todo-s">${esc(i['渠道'])} · ${esc(i['状态'] || '')}</div>
+      </div>
+      <span class="chip wait">${esc(GATE_SHORT[g] || '等你')}</span>
+      <span class="todo-go"><svg viewBox="0 0 24 24"><path d="M5 12h13M12 6l6 6-6 6"/></svg></span>
+    </a>`;
+  }).join('');
+}
+
+function renderRecent(s){
+  const rows = s['明细'].slice(0, 6);
+  document.getElementById('recent').innerHTML = rows.map(r => `
+    <tr>
+      <td class="tl"><span class="tb-date">${r['日期'].slice(5)}</span></td>
+      <td class="tl"><div class="tb-title">${esc(r['标题'])}</div></td>
+      <td class="tl"><span class="pf ${r['平台'] === '小红书' ? 'xhs' : r['平台'] === '公众号' ? 'wx' : 'other'}">${esc(r['平台'])}</span></td>
+      <td>${fmt(r['阅读'])}</td>
+      <td>${fmt(r['点赞'])}</td>
+      <td>${fmt(r['收藏'])}</td>
+      <td>${fmt(r['评论'])}</td>
+      <td class="${r['互动率'] >= 10 ? 'tb-hot' : ''}">${pct(r['互动率'])}</td>
+    </tr>`).join('');
+}
+
+(async function(){
+  const shell = await mountShell();
+  if(!shell){
+    document.getElementById('lede').textContent = '先启动本地服务，数据才读得到';
+    document.getElementById('wb').innerHTML = '';
+    document.getElementById('wks').innerHTML = '';
+    document.getElementById('plat').innerHTML = '';
+    document.getElementById('recent').innerHTML = '';
+    return;
+  }
+  const s = shell.stats;
+  renderHero(s);
+  renderWeekBars(s);
+  renderWeeks(s);
+  renderPlatform(s);
+  renderTodo(shell.board);
+  renderRecent(s);
+
+  // 侧栏那张小卡：AI 在推进哪条
+  const running = (shell.board.items || []).find(i => i['阶段'] === '写稿' && (i['待你确认'] || '无') === '无')
+    || (shell.board.items || []).find(i => i['阶段'] !== '复盘' && (i['待你确认'] || '无') === '无');
+  if(running){
+    document.getElementById('aiTitle').textContent = 'AI 正在推进 · ' + running.id;
+    document.getElementById('aiSub').textContent = running['状态'] || '处理中';
+  }else{
+    document.getElementById('aiTitle').textContent = 'AI 待命中';
+    document.getElementById('aiSub').textContent = '手上没有在跑的稿子';
+  }
+
+  document.getElementById('btnReload').addEventListener('click', () => location.reload());
+})();
+</script>
+</body>
+</html>

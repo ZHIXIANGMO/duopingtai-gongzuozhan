@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>流水线 · 橘子头内容工作站</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .pipe-head{display:flex;align-items:center;gap:10px;margin:6px 0 14px}
+  .pipe-head h2{font-size:16px;font-weight:600;letter-spacing:-.2px}
+  .pipe-head span{font-size:10.5px;color:var(--mute)}
+  .pipe-tools{margin-left:auto;display:flex;align-items:center;gap:7px}
+  .search{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line2);
+    border-radius:11px;padding:0 5px 0 11px;height:34px;transition:.18s;min-width:190px}
+  .search:focus-within{border-color:#DADADA;box-shadow:0 6px 16px rgba(0,0,0,.06)}
+  .search svg{width:13px;height:13px;stroke:#BDBDBD;fill:none;stroke-width:1.8;stroke-linecap:round;flex:none}
+  .search input{flex:1;border:0;outline:0;font-size:11.5px;background:transparent;color:var(--ink);min-width:0}
+  .search input::placeholder{color:#C0C0C0}
+  .toggle{font-size:10.5px;padding:8px 12px;border-radius:10px;border:1px solid var(--line2);
+    background:#fff;color:#7C7C7C;cursor:pointer;transition:.16s;white-space:nowrap}
+  .toggle:hover{color:var(--ink)}
+  .toggle.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .mini{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:18px}
+  .mini div{background:#FAFAFA;border-radius:var(--r-sm);padding:11px 13px}
+  .mini b{display:block;font-size:19px;font-weight:700;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+  .mini span{font-size:9.5px;color:var(--mute);display:block;margin-top:2px}
+  @media(max-width:820px){
+    .mini{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .pipe-head{flex-wrap:wrap}
+    .pipe-tools{margin-left:0;width:100%}
+    .search{flex:1}
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="mark">🍊</div>
+      <div>
+        <div class="name">橘子头</div>
+        <div class="sub">CONTENT DESK</div>
+      </div>
+    </div>
+
+    <div class="nav-label">工作站</div>
+    <nav class="nav">
+      <a class="nav-item" href="index.html">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
+        总览
+      </a>
+      <a class="nav-item on" href="pipeline.html">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.8"/><rect x="9.5" y="4" width="5" height="11" rx="1.8"/><rect x="16" y="4" width="5" height="7" rx="1.8"/></svg>
+        流水线<span class="n" data-count="pipeline">0</span>
+      </a>
+      <a class="nav-item" href="data.html">
+        <svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3.5-4.5 3 2.5L20 7"/></svg>
+        数据<span class="n" data-count="week">0</span>
+      </a>
+    </nav>
+
+    <div class="side-foot">
+      <div class="me">
+        <div class="me-top">
+          <div class="me-av">🍊</div>
+          <div>
+            <div class="me-name">橘子头</div>
+            <div class="me-role">AI × 个人知识管理</div>
+          </div>
+        </div>
+        <div class="me-stats">
+          <div><b id="meWeek">—</b><span>本周已发</span></div>
+          <div><b id="meWait">—</b><span>等你</span></div>
+          <div><b id="meRead">—</b><span>总阅读</span></div>
+        </div>
+        <div class="open-note">真源 · <b>数据/内容/*.md</b></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb"><b>流水线</b> / 8 个环节 4 段</div>
+      <div class="top-right">
+        <div class="sync"><i class="dot loading" id="syncDot"></i><span id="syncText">连接中</span></div>
+        <button class="icon-btn" id="btnReload" title="刷新">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.6 5.9"/><path d="M20 5v6h-6"/></svg>
+        </button>
+        <div class="avatar">🍊</div>
+      </div>
+    </div>
+
+    <div class="pipe-head">
+      <h2>手上的内容</h2><span id="boardTip">点卡片看全程</span>
+      <div class="pipe-tools">
+        <label class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+          <input id="q" placeholder="搜标题、渠道、状态" autocomplete="off">
+        </label>
+        <button class="toggle" id="btnWait">只看等你确认</button>
+      </div>
+    </div>
+
+    <div class="mini" id="mini"></div>
+    <section class="board" id="board"></section>
+  </main>
+</div>
+
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer"></aside>
+<div class="toast" id="toast"></div>
+
+<script src="assets/app.js"></script>
+<script>
+const state = { items: [], cur: null, busy: false, q: '', onlyWait: false, stats: null };
+
+function norm(it){
+  const o = Object.assign({}, it);
+  o['待你确认'] = o['待你确认'] || '无';
+  o['卡住天数'] = Number(o['卡住天数'] || 0);
+  o['状态'] = o['状态'] || '';
+  o['渠道'] = o['渠道'] || '';
+  o['优先级'] = o['优先级'] || 'P2';
+  o['阶段'] = o['阶段'] || '讨论';
+  o['正文'] = o['正文'] || '';
+  STEPS.forEach(s => { if(!o[s]) o[s] = '未开始'; });
+  return o;
+}
+
+/* ---------- 看板 ---------- */
+function cardHtml(i, last){
+  const gate = i['待你确认'];
+  let chip = '';
+  if(gate !== '无'){
+    chip = `<span class="chip wait">${esc(GATE_SHORT[gate] || '等你')}</span>`;
+  }else if(i['卡住天数'] >= 7){
+    chip = `<span class="chip gray">${i['卡住天数']} 天没动</span>`;
+  }
+
+  const tags = String(i['渠道']).split(',').filter(Boolean).map(c => {
+    const cls = c.indexOf('小红书') > -1 ? 'xhs' : c.indexOf('公众号') > -1 ? 'wx' : '';
+    return `<span class="tag ${cls}">${esc(c.trim())}</span>`;
+  }).join('');
+
+  return `<div class="card-item ${last ? 'last' : ''} ${gate !== '无' ? 'wait' : ''}" data-id="${esc(i.id)}">
+    <div class="ci-top">
+      <i class="pri ${esc(i['优先级'])}"></i>
+      <div class="ci-t">${esc(i['标题'])}</div>
+    </div>
+    <div class="ci-tags">${tags}</div>
+    <div class="ci-foot"><span class="ci-s">${esc(i['状态'])}</span>${chip}</div>
+  </div>`;
+}
+
+function renderBoard(){
+  const host = $('#board');
+  const q = state.q.trim();
+  let pool = state.onlyWait
+    ? state.items.filter(i => i['待你确认'] !== '无')
+    : state.items;
+  if(q) pool = pool.filter(i => (i['标题'] + i['渠道'] + i['状态'] + i.id).indexOf(q) > -1);
+
+  $('#boardTip').textContent = state.onlyWait
+    ? `只看等你确认 · ${pool.length} 条`
+    : (q ? `筛选「${q}」· ${pool.length} 条` : '点卡片看全程，等你的卡片左边有红条');
+
+  host.innerHTML = PHASES.map(p => {
+    const rows = pool.filter(i => i['阶段'] === p.key);
+    const inner = rows.length
+      ? rows.map((i, k) => cardHtml(i, k === rows.length - 1)).join('')
+      : `<div class="col-empty">${q || state.onlyWait ? '没有匹配的' : '空的'}</div>`;
+    return `<div class="col">
+      <div class="col-h">
+        <div class="col-t"><i style="background:${p.color}"></i>${esc(p.name)}<em>${rows.length}</em></div>
+        <div class="col-s">${esc(p.sub)}</div>
+      </div>
+      ${inner}
+    </div>`;
+  }).join('');
+}
+
+function renderMini(){
+  const it = state.items;
+  const running = it.filter(i => i['阶段'] !== '复盘').length;
+  const waiting = it.filter(i => i['待你确认'] !== '无').length;
+  const stuck = it.filter(i => i['卡住天数'] >= 7 && i['阶段'] !== '复盘').length;
+  const week = state.stats ? state.stats['本周']['篇数'] : '—';
+
+  $('#mini').innerHTML = `
+    <div><b>${running}</b><span>在流水线上</span></div>
+    <div><b style="color:${waiting ? 'var(--accent)' : 'inherit'}">${waiting}</b><span>卡在你手上</span></div>
+    <div><b>${stuck}</b><span>停超 7 天</span></div>
+    <div><b>${week}</b><span>本周已发布</span></div>`;
+}
+
+function updateBadges(){
+  const running = state.items.filter(i => i['阶段'] !== '复盘').length;
+  const waiting = state.items.filter(i => i['待你确认'] !== '无').length;
+  const p = $('[data-count="pipeline"]'); if(p) p.textContent = running;
+  const w = $('[data-count="wait"]');
+  if(w){ w.textContent = waiting; w.classList.toggle('hot', waiting > 0); }
+  const mw = $('#meWait'); if(mw) mw.textContent = waiting;
+}
+
+/* ---------- 抽屉 ---------- */
+function mdToHtml(md){
+  const lines = String(md || '').replace(/\r/g, '').split('\n');
+  let out = '', inList = false, buf = [];
+
+  const inline = t => esc(t)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`(.+?)`/g, '<code>$1</code>');
+  const flushP = () => {
+    if(buf.length){ out += '<p>' + buf.map(inline).join('<br>') + '</p>'; buf = []; }
+  };
+  const closeList = () => { if(inList){ out += '</ul>'; inList = false; } };
+
+  lines.forEach(raw => {
+    const line = raw.trim();
+    if(!line){ flushP(); closeList(); return; }
+    if(line.indexOf('### ') === 0){ flushP(); closeList(); out += '<h3>' + inline(line.slice(4)) + '</h3>'; return; }
+    if(line.indexOf('## ') === 0){ flushP(); closeList(); out += '<h2>' + inline(line.slice(3)) + '</h2>'; return; }
+    if(line.indexOf('# ') === 0){ flushP(); closeList(); out += '<h2>' + inline(line.slice(2)) + '</h2>'; return; }
+    if(/^[-*]\s+/.test(line)){
+      flushP();
+      if(!inList){ out += '<ul>'; inList = true; }
+      out += '<li>' + inline(line.replace(/^[-*]\s+/, '')) + '</li>';
+      return;
+    }
+    closeList(); buf.push(line);
+  });
+
+  flushP(); closeList();
+  return out || '<p style="color:#B5B5B5">（正文还没写）</p>';
+}
+
+function renderDrawer(){
+  const cur = state.cur;
+  if(!cur) return;
+
+  const steps = STEPS.map(s => {
+    const v = cur[s];
+    const cls = v === '完成' ? 'done'
+      : v === '进行中' ? 'doing'
+      : v === '待确认' ? 'wait'
+      : v === '打回' ? 'reject' : '';
+    return `<div class="step ${cls}"><div class="pt"></div><div class="lb">${esc(s)}</div></div>`;
+  }).join('');
+
+  const gate = cur['待你确认'];
+  const gi = GATE_INFO[gate];
+  const actHtml = (gate !== '无' && gi) ? `
+    <div class="act">
+      <div class="act-h"><i></i>${esc(gi.label)} · 等你一句</div>
+      <p>${esc(gi.hint)}</p>
+      <textarea id="actNote" placeholder="打回必须写一句原因；通过可留空"></textarea>
+      <div class="act-btns">
+        <button class="btn btn-primary" data-act="pass">通过，往下走</button>
+        <button class="btn btn-danger" data-act="reject">打回重做</button>
+      </div>
+    </div>` : '';
+
+  $('#drawer').innerHTML = `
+    <div class="dr-head">
+      <h2>${esc(cur['标题'])}</h2>
+      <button class="dr-close" data-act="close">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="dr-body">
+      <div class="block">
+        <div class="block-h">走到哪了</div>
+        <div class="steps">${steps}</div>
+        <div class="meta-row">
+          <span>渠道 <b>${esc(cur['渠道'] || '—')}</b></span>
+          <span>阶段 <b>${esc(cur['阶段'])}</b></span>
+          <span>优先级 <b>${esc(cur['优先级'])}</b></span>
+          <span>更新 <b>${esc(cur['更新'] || '—')}</b></span>
+          ${cur['卡住天数'] ? `<span>已停 <b>${cur['卡住天数']}</b> 天</span>` : ''}
+        </div>
+      </div>
+      ${actHtml}
+      <div class="block">
+        <div class="block-h">正文</div>
+        <div class="doc">${mdToHtml(cur['正文'])}</div>
+      </div>
+    </div>`;
+}
+
+function openItem(id){
+  const it = state.items.find(i => String(i.id) === String(id));
+  if(!it) return;
+  state.cur = it;
+  renderDrawer();
+  $('#drawer').classList.add('on');
+  $('#mask').classList.add('on');
+  const body = $('.dr-body');
+  if(body) body.scrollTop = 0;
+}
+
+function closeDrawer(){
+  state.cur = null;
+  $('#drawer').classList.remove('on');
+  $('#mask').classList.remove('on');
+}
+
+async function doConfirm(gate, decision){
+  if(state.busy || !state.cur) return;
+  const noteEl = $('#actNote');
+  const note = noteEl ? noteEl.value.trim() : '';
+
+  if(decision === 'reject' && !note){
+    toast('打回得写一句原因，不然我不知道往哪改');
+    if(noteEl) noteEl.focus();
+    return;
+  }
+
+  state.busy = true;
+  const id = state.cur.id;
+  try{
+    const j = await postJSON('/api/confirm', {id, gate, decision, note});
+    toast(decision === 'pass' ? '已放行，接着往下跑' : '已打回，等返工');
+    const b = await getJSON('/api/board');
+    state.items = (b.items || []).map(norm);
+    state.cur = state.items.find(i => String(i.id) === String(j.item.id)) || null;
+    renderBoard(); renderMini(); updateBadges();
+    if(state.cur) renderDrawer(); else closeDrawer();
+  }catch(e){
+    toast(e.message);
+  }finally{
+    state.busy = false;
+  }
+}
+
+/* ---------- 事件 ---------- */
+$('#board').addEventListener('click', e => {
+  const card = e.target.closest('.card-item');
+  if(!card) return;
+  openItem(card.dataset.id);
+});
+
+$('#drawer').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if(!btn) return;
+  const act = btn.dataset.act;
+  if(act === 'close') return closeDrawer();
+  if(act === 'pass' || act === 'reject') doConfirm(state.cur['待你确认'], act);
+});
+
+$('#mask').addEventListener('click', closeDrawer);
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && state.cur) closeDrawer();
+});
+
+let qTimer = null;
+$('#q').addEventListener('input', e => {
+  clearTimeout(qTimer);
+  qTimer = setTimeout(() => { state.q = e.target.value; renderBoard(); }, 140);
+});
+
+$('#btnWait').addEventListener('click', () => {
+  state.onlyWait = !state.onlyWait;
+  $('#btnWait').classList.toggle('on', state.onlyWait);
+  renderBoard();
+});
+
+$('#btnReload').addEventListener('click', () => location.reload());
+
+/* ---------- 启动 ---------- */
+(async function(){
+  const shell = await mountShell();
+  if(!shell){
+    offlineBlock($('#board'), '读不到 数据/内容 下的 md。');
+    $('#mini').style.display = 'none';
+    return;
+  }
+  state.items = (shell.board.items || []).map(norm);
+  state.stats = shell.stats;
+  renderBoard();
+  renderMini();
+  updateBadges();
+
+  // 从总览点过来的：/pipeline.html?id=002
+  const id = new URLSearchParams(location.search).get('id');
+  if(id) openItem(id);
+})();
+</script>
+</body>
+</html>

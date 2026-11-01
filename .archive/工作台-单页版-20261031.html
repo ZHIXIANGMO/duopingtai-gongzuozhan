@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>橘子头 · 内容工作站</title>
+<style>
+:root{
+  --bg:#F1F1F1; --card:#fff; --ink:#141414; --ink2:#4A4A4A; --mute:#A3A3A3;
+  --line:#F0F0F0; --line2:#E7E7E7;
+  --accent:#FF5A5F; --accent-soft:#FFEAEB;
+  --pink:#FDE8EA; --blue:#E8F1F8; --yellow:#FCF3DE; --mint:#E6F2EC; --violet:#F1EDF9;
+  --r-lg:26px; --r-md:18px; --r-sm:14px;
+  --sh:0 26px 60px rgba(0,0,0,.08), 0 3px 10px rgba(0,0,0,.03);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Poppins",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;
+}
+button,input,textarea{font-family:inherit}
+
+/* ---------- 外壳 ---------- */
+.app{
+  display:flex; height:calc(100vh - 36px); margin:18px; background:#fff;
+  border-radius:var(--r-lg); box-shadow:var(--sh); overflow:hidden;
+}
+
+/* ---------- 左导航 ---------- */
+.side{
+  width:214px; flex:0 0 214px; border-right:1px solid var(--line);
+  padding:24px 16px 18px; display:flex; flex-direction:column;
+}
+.brand{display:flex;align-items:center;gap:10px;padding:0 6px 22px}
+.brand .mark{
+  width:32px;height:32px;border-radius:11px;background:var(--ink);color:#fff;
+  display:grid;place-items:center;font-size:15px;line-height:1;
+}
+.brand .name{font-size:13.5px;font-weight:600;letter-spacing:.3px}
+.brand .sub{font-size:10px;color:var(--mute);letter-spacing:.6px;margin-top:2px}
+
+.nav-label{font-size:9.5px;letter-spacing:1.4px;color:#C9C9C9;padding:0 11px;margin:2px 0 8px}
+.nav{display:flex;flex-direction:column;gap:3px}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:9.5px 11px;border-radius:12px;
+  font-size:12.5px;color:#7C7C7C;cursor:pointer;transition:.16s;user-select:none;
+}
+.nav-item svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.nav-item:hover{background:#F7F7F7;color:var(--ink)}
+.nav-item.on{background:var(--ink);color:#fff}
+.nav-item.on svg{stroke:#fff}
+.nav-item .n{margin-left:auto;font-size:10.5px;opacity:.55;font-variant-numeric:tabular-nums}
+.nav-item.on .n{opacity:.75}
+.nav-item .n.hot{color:var(--accent);opacity:1}
+.nav-item.on .n.hot{color:#FF8A8E}
+
+.side-foot{margin-top:auto;padding-top:18px}
+.me{background:#191919;border-radius:var(--r-md);padding:14px 14px 13px;color:#fff}
+.me-top{display:flex;align-items:center;gap:9px}
+.me-av{
+  width:36px;height:36px;border-radius:50%;flex:none;
+  background:linear-gradient(135deg,#FFC2A6,#FF5A5F);display:grid;place-items:center;
+  font-size:15px;box-shadow:0 0 0 2px rgba(255,255,255,.12);
+}
+.me-name{font-size:12.5px;font-weight:600;line-height:1.3}
+.me-role{font-size:9.5px;color:#8A8A8A;margin-top:2px;letter-spacing:.3px}
+.me-stats{display:flex;margin-top:14px;gap:4px}
+.me-stats div{flex:1;min-width:0}
+.me-stats b{display:block;font-size:15px;font-weight:600;letter-spacing:.2px;font-variant-numeric:tabular-nums}
+.me-stats span{font-size:9px;color:#7E7E7E;display:block;margin-top:2px;white-space:nowrap}
+.open-note{margin-top:10px;font-size:9.5px;color:#6E6E6E;line-height:1.6}
+.open-note b{color:#B9B9B9;font-weight:500}
+
+/* ---------- 主区 ---------- */
+.main{flex:1;min-width:0;overflow-y:auto;padding:18px 30px 44px;scroll-behavior:smooth}
+.main::-webkit-scrollbar{width:10px}
+.main::-webkit-scrollbar-thumb{background:#E9E9E9;border-radius:8px;border:3px solid #fff}
+
+.topbar{display:flex;align-items:center;gap:12px;height:38px;margin-bottom:4px}
+.crumb{font-size:11.5px;color:var(--mute);letter-spacing:.3px}
+.crumb b{color:var(--ink);font-weight:600}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.sync{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--mute);margin-right:2px;white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:50%;background:#3FBF7F;flex:none}
+.dot.loading{background:#F5B942}
+.dot.off{background:#E05555}
+.icon-btn{
+  width:34px;height:34px;border-radius:11px;border:1px solid var(--line);background:#fff;
+  display:grid;place-items:center;cursor:pointer;transition:.16s;color:#5A5A5A;
+}
+.icon-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn:hover{background:#F8F8F8;transform:translateY(-1px);box-shadow:0 6px 14px rgba(0,0,0,.05)}
+.avatar{
+  width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#FFC2A6,#FF5A5F);
+  display:grid;place-items:center;font-size:13px;color:#fff;cursor:pointer;
+}
+
+/* ---------- 封面 ---------- */
+.hero{display:grid;grid-template-columns:340px minmax(0,1fr);gap:28px;align-items:center;padding:4px 0 46px}
+.art-wrap{position:relative}
+.hero-art{width:100%;height:auto;display:block;overflow:visible}
+.ai-pill{
+  position:absolute;left:-8px;bottom:-30px;background:#fff;border:1px solid var(--line2);
+  border-radius:15px;padding:9px 13px 10px;box-shadow:0 16px 34px rgba(0,0,0,.1);
+  min-width:196px;
+}
+.ai-pill .row{display:flex;align-items:center;gap:7px}
+.ai-pill .pdot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.6s infinite;flex:none}
+.ai-pill .pt{font-size:11px;font-weight:600;letter-spacing:.2px}
+.ai-pill .ps{font-size:9.5px;color:var(--mute);margin-top:4px;line-height:1.5;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}
+.ai-pill .pbar{height:3px;border-radius:3px;background:#F2F2F2;margin-top:8px;overflow:hidden}
+.ai-pill .pbar i{
+  display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#FF5A5F,#FFB199);
+  width:38%;animation:slide 2.6s ease-in-out infinite;
+}
+
+.hi{font-size:19px;color:#8E8E8E;font-weight:500;letter-spacing:.2px}
+.h1{font-size:33px;font-weight:700;line-height:1.3;letter-spacing:-.6px;margin:4px 0 16px}
+.h1 em{font-style:normal;color:var(--accent)}
+.h1 .num{font-variant-numeric:tabular-nums}
+
+.search{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line2);
+  border-radius:15px;padding:0 6px 0 15px;height:46px;box-shadow:0 8px 20px rgba(0,0,0,.035);transition:.18s}
+.search:focus-within{border-color:#DADADA;box-shadow:0 10px 24px rgba(0,0,0,.07)}
+.search svg{width:15px;height:15px;stroke:#BDBDBD;fill:none;stroke-width:1.8;stroke-linecap:round;flex:none}
+.search input{flex:1;border:0;outline:0;font-size:13px;background:transparent;color:var(--ink);min-width:0}
+.search input::placeholder{color:#C0C0C0}
+.search button{width:36px;height:36px;border-radius:11px;border:0;background:var(--accent);color:#fff;
+  display:grid;place-items:center;cursor:pointer;transition:.16s;flex:none}
+.search button:hover{filter:brightness(.96)}
+.search button svg{stroke:#fff;width:15px;height:15px}
+
+.todo-h{display:flex;align-items:center;gap:8px;margin:22px 0 10px}
+.todo-h b{font-size:12.5px;font-weight:600;letter-spacing:.2px}
+.todo-h span{font-size:10.5px;color:var(--mute)}
+.todo{display:flex;flex-direction:column;gap:7px}
+.todo-item{
+  display:flex;align-items:center;gap:11px;padding:10px 13px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:#fff;cursor:pointer;transition:.16s;
+}
+.todo-item:hover{border-color:#E3E3E3;box-shadow:0 12px 26px rgba(0,0,0,.06);transform:translateY(-1px)}
+.todo-n{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:11px;
+  font-weight:600;flex:none;color:#141414}
+.todo-b{flex:1;min-width:0}
+.todo-t{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.todo-s{font-size:10px;color:var(--mute);margin-top:3px}
+.chip{font-size:9.5px;padding:4px 8px;border-radius:7px;font-weight:500;white-space:nowrap;flex:none;letter-spacing:.2px}
+.chip.wait{background:var(--accent-soft);color:#D9474C}
+.chip.gray{background:#F5F5F5;color:#8A8A8A}
+.chip.dark{background:#141414;color:#fff}
+.todo-go{width:24px;height:24px;border-radius:50%;background:#F7F7F7;display:grid;place-items:center;flex:none;transition:.16s}
+.todo-item:hover .todo-go{background:var(--ink)}
+.todo-go svg{width:11px;height:11px;stroke:#8A8A8A;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.todo-item:hover .todo-go svg{stroke:#fff}
+.todo-empty{padding:16px;border:1px dashed #E5E5E5;border-radius:var(--r-sm);
+  font-size:11.5px;color:var(--mute);text-align:center}
+
+/* ---------- 通用区块 ---------- */
+.sec-head{display:flex;align-items:baseline;gap:9px;margin:2px 0 13px;scroll-margin-top:14px}
+.sec-head h2{font-size:14.5px;font-weight:600;letter-spacing:.2px}
+.sec-head span{font-size:10.5px;color:var(--mute)}
+.sec-head .more{margin-left:auto;font-size:10.5px;color:var(--mute);cursor:default}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r-md);padding:16px 16px 14px;display:flex;flex-direction:column}
+.card-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--line);font-size:10px;color:#ABABAB;letter-spacing:.2px}
+.card-h{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.card-h b{font-size:12px;font-weight:600;letter-spacing:.2px}
+.card-h span{font-size:10px;color:var(--mute);margin-left:auto}
+
+/* ---------- 图表 ---------- */
+.charts{display:grid;grid-template-columns:1fr 1.28fr .92fr;gap:13px;margin-bottom:26px}
+.donut-wrap{display:flex;align-items:center;gap:14px}
+.donut{width:128px;height:128px;flex:none}
+.donut-legend{display:flex;flex-direction:column;gap:9px;flex:1;min-width:0}
+.lg{display:flex;align-items:center;gap:7px;font-size:10.5px;color:#7C7C7C}
+.lg i{width:7px;height:7px;border-radius:2.5px;flex:none}
+.lg b{margin-left:auto;color:var(--ink);font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}
+
+.srows{display:flex;flex-direction:column;gap:7px}
+.srow{display:flex;align-items:center;gap:9px}
+.srow .sl{width:26px;font-size:10px;color:#8A8A8A;flex:none;text-align:right}
+.srow .strack{flex:1;height:7px;border-radius:4px;background:#F4F4F4;display:flex;overflow:hidden}
+.srow .strack i{display:block;height:100%;transition:width .5s ease}
+.srow .sn{width:14px;font-size:9.5px;color:#B5B5B5;text-align:right;flex:none;font-variant-numeric:tabular-nums}
+.legend-row{display:flex;gap:12px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+.legend-row span{display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--mute)}
+.legend-row i{width:6px;height:6px;border-radius:2px}
+
+.cbars{display:flex;flex-direction:column;gap:11px}
+.cbar{display:flex;flex-direction:column;gap:5px}
+.cbar .ct{display:flex;align-items:center;font-size:10.5px;color:#7C7C7C}
+.cbar .ct b{margin-left:auto;color:var(--ink);font-weight:600;font-size:11px;font-variant-numeric:tabular-nums}
+.cbar .ctrack{height:8px;border-radius:4px;background:#F4F4F4;overflow:hidden}
+.cbar .ctrack i{display:block;height:100%;border-radius:4px;transition:width .5s}
+.cstats{display:flex;gap:6px;margin-top:15px;padding-top:13px;border-top:1px solid var(--line)}
+.cstats div{flex:1;min-width:0}
+.cstats b{display:block;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+.cstats span{font-size:9px;color:var(--mute);display:block;margin-top:2px;white-space:nowrap}
+
+/* ---------- 流水线 ---------- */
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;align-items:start}
+.col{background:#FAFAFA;border-radius:var(--r-md);padding:11px 9px 9px}
+.col-h{padding:2px 4px 9px}
+.col-t{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600}
+.col-t i{width:6px;height:6px;border-radius:50%;flex:none}
+.col-t em{font-style:normal;margin-left:auto;font-size:10px;color:#B5B5B5;font-weight:500}
+.col-s{font-size:9.5px;color:#B5B5B5;margin-top:3px;padding-left:12px}
+.card-item{
+  background:#fff;border:1px solid #F1F1F1;border-radius:13px;padding:10px 11px;
+  margin-bottom:7px;cursor:pointer;transition:.16s;
+}
+.card-item:hover{box-shadow:0 10px 22px rgba(0,0,0,.07);transform:translateY(-1px);border-color:#EAEAEA}
+.card-item.last{margin-bottom:0}
+.ci-top{display:flex;align-items:flex-start;gap:6px}
+.pri{width:5px;height:5px;border-radius:50%;margin-top:5px;flex:none}
+.pri.P0{background:var(--accent)}
+.pri.P1{background:#141414}
+.pri.P2{background:#D5D5D5}
+.ci-t{font-size:11.5px;font-weight:500;line-height:1.5;flex:1;min-width:0}
+.ci-tags{display:flex;gap:4px;margin:7px 0 8px;flex-wrap:wrap}
+.tag{font-size:9px;padding:2.5px 6px;border-radius:6px;background:#F6F6F6;color:#8E8E8E;white-space:nowrap}
+.tag.xhs{background:var(--pink);color:#C75458}
+.tag.wx{background:var(--mint);color:#3E8E68}
+.ci-foot{display:flex;align-items:center;gap:6px}
+.ci-s{font-size:9.5px;color:#AFAFAF;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.col-empty{font-size:10px;color:#C9C9C9;text-align:center;padding:16px 0}
+
+/* ---------- 抽屉 ---------- */
+.mask{position:fixed;inset:0;background:rgba(20,20,20,.28);backdrop-filter:blur(2px);opacity:0;
+  pointer-events:none;transition:.24s;z-index:40}
+.mask.on{opacity:1;pointer-events:auto}
+.drawer{
+  position:fixed;top:14px;right:14px;bottom:14px;width:min(452px,calc(100vw - 28px));
+  background:#fff;border-radius:22px;box-shadow:-18px 0 60px rgba(0,0,0,.14);
+  transform:translateX(calc(100% + 20px));transition:transform .28s cubic-bezier(.32,.72,0,1);
+  z-index:50;display:flex;flex-direction:column;overflow:hidden;
+}
+.drawer.on{transform:none}
+.dr-head{display:flex;align-items:flex-start;gap:10px;padding:20px 20px 15px}
+.dr-head h2{font-size:16px;font-weight:600;line-height:1.45;flex:1;letter-spacing:-.2px}
+.dr-close{width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:#fff;
+  display:grid;place-items:center;cursor:pointer;color:#7C7C7C;flex:none;transition:.16s}
+.dr-close:hover{background:#F7F7F7;color:#141414}
+.dr-body{flex:1;overflow-y:auto;padding:0 20px 26px}
+.dr-body::-webkit-scrollbar{width:8px}
+.dr-body::-webkit-scrollbar-thumb{background:#EDEDED;border-radius:8px}
+
+.block{margin-bottom:20px}
+.block-h{font-size:9.5px;letter-spacing:1.2px;color:#C2C2C2;margin-bottom:10px}
+
+.steps{display:flex;margin:2px 0 14px}
+.step{flex:1;text-align:center;position:relative;min-width:0}
+.step::before{content:'';position:absolute;top:6px;left:0;right:0;height:1.5px;background:#F1F1F1;z-index:0}
+.step:first-child::before{left:50%}
+.step:last-child::before{right:50%}
+.step .pt{width:13px;height:13px;border-radius:50%;margin:0 auto;border:2px solid #E2E2E2;
+  background:#FAFAFA;position:relative;z-index:1;transition:.2s}
+.step .lb{font-size:9px;color:#B6B6B6;margin-top:5px;white-space:nowrap;transform:scale(.95)}
+.step.done .pt{background:#141414;border-color:#141414}
+.step.done .lb{color:#141414}
+.step.doing .pt{background:#fff;border-color:#141414;box-shadow:0 0 0 3px rgba(20,20,20,.07)}
+.step.doing .lb{color:#141414}
+.step.wait .pt{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,90,95,.14)}
+.step.wait .lb{color:var(--accent)}
+.step.reject .pt{background:#fff;border-color:var(--accent)}
+
+.meta-row{display:flex;flex-wrap:wrap;gap:6px}
+.meta-row span{font-size:10px;color:#9A9A9A;background:#F7F7F7;border-radius:7px;padding:4px 8px}
+.meta-row b{color:#141414;font-weight:600}
+
+.act{background:#FFF7F7;border:1px solid #FFE6E7;border-radius:15px;padding:14px;margin-bottom:20px}
+.act-h{font-size:12px;font-weight:600;color:#D9474C;display:flex;align-items:center;gap:6px}
+.act-h i{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.6s infinite}
+.act p{font-size:11px;color:#8A7B7B;line-height:1.7;margin:7px 0 10px}
+.act textarea{
+  width:100%;min-height:62px;border:1px solid #FFE0E1;border-radius:11px;padding:9px 10px;
+  font-size:11.5px;line-height:1.7;resize:vertical;outline:0;background:#fff;color:var(--ink);
+}
+.act textarea::placeholder{color:#C9B5B5}
+.act textarea:focus{border-color:#FFC9CB}
+.act-btns{display:flex;gap:8px;margin-top:10px}
+.btn{padding:9px 15px;border-radius:11px;font-size:11.5px;font-weight:500;border:1px solid var(--line2);
+  background:#fff;cursor:pointer;transition:.16s;color:var(--ink)}
+.btn:hover{background:#F8F8F8}
+.btn-primary{background:#141414;border-color:#141414;color:#fff}
+.btn-primary:hover{background:#000}
+.btn-danger{color:#D9474C;border-color:#FFD5D6;background:#fff}
+.btn-danger:hover{background:#FFF5F5}
+.btn:disabled{opacity:.5;cursor:default}
+
+.doc{font-size:13px;line-height:1.95;color:#2A2A2A}
+.doc p{margin-bottom:13px}
+.doc h2{font-size:13px;font-weight:600;margin:18px 0 9px;color:#141414;
+  padding-left:9px;border-left:2px solid var(--accent)}
+.doc h3{font-size:12.5px;font-weight:600;margin:14px 0 7px}
+.doc ul{padding-left:16px;margin-bottom:13px}
+.doc li{margin-bottom:5px;font-size:12.5px}
+.doc code{background:#F6F6F6;border-radius:4px;padding:1px 5px;font-size:11.5px}
+
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.metric{background:#FAFAFA;border-radius:11px;padding:10px 9px;text-align:left}
+.metric .mv{font-size:16px;font-weight:600;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.metric .mk{font-size:9px;color:var(--mute);margin-top:3px}
+
+.blank{padding:34px 22px;text-align:center;font-size:12px;color:var(--mute);line-height:2}
+.blank b{color:var(--ink);font-weight:600}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,16px);background:#141414;color:#fff;
+  font-size:12px;padding:11px 18px;border-radius:13px;opacity:0;pointer-events:none;
+  transition:.24s;z-index:80;box-shadow:0 14px 34px rgba(0,0,0,.24);max-width:82vw;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- 动效 ---------- */
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3.5px)}}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}
+@keyframes type{from{transform:translate(0,0)}to{transform:translate(-2.2px,1.4px)}}
+@keyframes steam{0%{transform:translateY(0);opacity:0}20%{opacity:.55}100%{transform:translateY(-14px);opacity:0}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes pulse{0%,100%{opacity:.28;transform:scale(.82)}50%{opacity:1;transform:scale(1)}}
+@keyframes slide{0%{transform:translateX(-40%)}50%{transform:translateX(160%)}100%{transform:translateX(-40%)}}
+@keyframes drawline{0%{stroke-dashoffset:120}55%,100%{stroke-dashoffset:0}}
+
+.head-g{animation:bob 4.6s ease-in-out infinite;transform-origin:160px 160px}
+.eyes-g{animation:blink 5.4s infinite;transform-box:fill-box;transform-origin:center}
+.hand-g{animation:type .82s ease-in-out infinite alternate;transform-origin:209px 252px}
+.steam-1{animation:steam 3.4s linear infinite}
+.steam-2{animation:steam 3.4s linear infinite .9s}
+.steam-3{animation:steam 3.4s linear infinite 1.8s}
+.sp-1{animation:float 6s ease-in-out infinite}
+.sp-2{animation:float 7.2s ease-in-out infinite .8s}
+.sp-3{animation:float 5.4s ease-in-out infinite 1.6s}
+.bd-1{animation:pulse 1.5s infinite}
+.bd-2{animation:pulse 1.5s infinite .22s}
+.bd-3{animation:pulse 1.5s infinite .44s}
+.spark{stroke-dasharray:120;animation:drawline 3.4s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+
+/* ---------- 响应式 ---------- */
+@media(max-width:1180px){
+  .charts{grid-template-columns:1fr 1fr}
+  .charts .card:first-child{grid-column:1 / -1}
+  .charts .card:first-child .donut-wrap{justify-content:center;gap:26px}
+  .charts .card:first-child .donut-legend{max-width:260px}
+}
+@media(max-width:960px){
+  .hero{grid-template-columns:280px minmax(0,1fr);gap:18px}
+  .h1{font-size:27px}
+  .board{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:820px){
+  .app{flex-direction:column;height:auto;min-height:calc(100vh - 20px);margin:10px;border-radius:20px;overflow:visible}
+  .side{width:100%;flex:none;flex-direction:row;align-items:center;padding:10px 14px;
+    border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+  .side::-webkit-scrollbar{display:none}
+  .brand{padding:0 10px 0 0;flex:none}
+  .brand .sub,.brand .name{display:none}
+  .nav{flex-direction:row;gap:3px;flex:none}
+  .nav-label,.side-foot{display:none}
+  .nav-item{padding:8px 9px;white-space:nowrap;font-size:12px;gap:6px}
+  .nav-item svg{width:15px;height:15px}
+  .nav-item .n{display:none}
+  .nav-item .n.hot{display:inline;font-size:10px;margin-left:2px}
+  .main{padding:14px 15px 34px;overflow:visible}
+  .hero{grid-template-columns:1fr;gap:6px;padding-bottom:22px}
+  .art-wrap{max-width:300px;margin:0 auto;order:2}
+  .hero-r{order:1}
+  .h1{font-size:25px;margin-bottom:14px}
+  .hi{font-size:16px}
+  .charts{grid-template-columns:1fr;gap:11px}
+  .charts .card:first-child{grid-column:auto}
+  .charts .card:first-child .donut-wrap{justify-content:flex-start;gap:14px}
+  .board{grid-template-columns:1fr}
+  .drawer{top:8px;right:8px;bottom:8px;left:8px;width:auto;border-radius:18px}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ========== 左导航 ========== -->
+  <aside class="side">
+    <div class="brand">
+      <div class="mark">🍊</div>
+      <div>
+        <div class="name">橘子头</div>
+        <div class="sub">CONTENT DESK</div>
+      </div>
+    </div>
+
+    <div class="nav-label">工作站</div>
+    <nav class="nav">
+      <div class="nav-item on" data-target="s-overview">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
+        总览
+      </div>
+      <div class="nav-item" data-target="s-todo">
+        <svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1.6 1.6L8 5"/><path d="M4 12l1.6 1.6L8 11"/><path d="M4 18l1.6 1.6L8 17"/></svg>
+        等你出手<span class="n hot" id="navTodo">0</span>
+      </div>
+      <div class="nav-item" data-target="s-board">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.8"/><rect x="9.5" y="4" width="5" height="11" rx="1.8"/><rect x="16" y="4" width="5" height="7" rx="1.8"/></svg>
+        流水线<span class="n" id="navBoard">0</span>
+      </div>
+      <div class="nav-item" data-target="s-data">
+        <svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3.5-4.5 3 2.5L20 7"/></svg>
+        数据
+      </div>
+    </nav>
+
+    <div class="side-foot">
+      <div class="me">
+        <div class="me-top">
+          <div class="me-av">🍊</div>
+          <div>
+            <div class="me-name">橘子头</div>
+            <div class="me-role">AI × 个人知识管理</div>
+          </div>
+        </div>
+        <div class="me-stats">
+          <div><b id="meRun">—</b><span>在跑</span></div>
+          <div><b id="meWait">—</b><span>等你</span></div>
+          <div><b id="meDone">—</b><span>已发</span></div>
+        </div>
+        <div class="open-note">双层确认 · <b>本地 md</b> 为真源</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========== 主区 ========== -->
+  <main class="main" id="main">
+    <div class="topbar">
+      <div class="crumb"><b>概览</b> / 今天</div>
+      <div class="top-right">
+        <div class="sync"><i class="dot loading" id="syncDot"></i><span id="syncText">连接中</span></div>
+        <button class="icon-btn" id="btnReload" title="刷新">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.6 5.9"/><path d="M20 5v6h-6"/></svg>
+        </button>
+        <button class="icon-btn" title="通知">
+          <svg viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 10-12 0c0 5-2 6.5-2 6.5h16s-2-1.5-2-6.5z"/><path d="M10.2 19a2 2 0 003.6 0"/></svg>
+        </button>
+        <div class="avatar">🍊</div>
+      </div>
+    </div>
+
+    <!-- ---------- 封面 ---------- -->
+    <section class="hero" id="s-overview">
+      <div class="art-wrap">
+        <!-- 角色：正在写东西的橘子头 -->
+        <svg class="hero-art" viewBox="0 0 320 330" aria-label="正在工作的角色">
+          <defs>
+            <linearGradient id="gWarm" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#FDF6F1"/>
+              <stop offset="1" stop-color="#F7F1F8"/>
+            </linearGradient>
+          </defs>
+
+          <circle cx="160" cy="164" r="126" fill="url(#gWarm)"/>
+          <circle cx="160" cy="164" r="137" fill="none" stroke="#F1EAE5" stroke-width="1.2" stroke-dasharray="2 7"/>
+
+          <!-- 漂浮装饰 -->
+          <g class="sp-1" opacity=".8">
+            <path d="M64 92l2.6 7.4 7.4 2.6-7.4 2.6L64 112l-2.6-7.4L54 102l7.4-2.6z" fill="#FF5A5F"/>
+          </g>
+          <g class="sp-2" opacity=".9">
+            <path d="M258 154l2.2 6.2 6.2 2.2-6.2 2.2-2.2 6.2-2.2-6.2-6.2-2.2 6.2-2.2z" fill="#9FB2C4"/>
+          </g>
+          <g class="sp-3" opacity=".55">
+            <circle cx="252" cy="248" r="4.5" fill="#FF5A5F"/>
+            <circle cx="78" cy="206" r="3.5" fill="#9FB2C4"/>
+          </g>
+
+          <!-- 对话气泡 -->
+          <path d="M221 54H277a15 15 0 0115 15v14a15 15 0 01-15 15h-37l-15 12V98h-4a15 15 0 01-15-15V69a15 15 0 0115-15z"
+                fill="#fff" stroke="#141414" stroke-width="2.2" stroke-linejoin="round"/>
+          <circle class="bd-1" cx="238" cy="76" r="3.4" fill="#141414"/>
+          <circle class="bd-2" cx="250" cy="76" r="3.4" fill="#141414"/>
+          <circle class="bd-3" cx="262" cy="76" r="3.4" fill="#FF5A5F"/>
+
+          <!-- 桌子 -->
+          <rect x="26" y="284" width="268" height="14" rx="7" fill="#FBF8F5" stroke="#141414" stroke-width="2.2"/>
+
+          <!-- 杯子 -->
+          <g>
+            <path class="steam-1" d="M256 250c-3.5-5 3.5-7 0-12" stroke="#C9C9C9" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path class="steam-2" d="M266 248c-3.5-5.5 3.5-7.5 0-13" stroke="#D6D6D6" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path class="steam-3" d="M276 250c-3.5-5 3.5-7 0-12" stroke="#C9C9C9" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            <path d="M248 258h34v20a7 7 0 01-7 7h-20a7 7 0 01-7-7z" fill="#fff" stroke="#141414" stroke-width="2.2" stroke-linejoin="round"/>
+            <path d="M250 265h30" stroke="#FFD3CE" stroke-width="3.2" stroke-linecap="round"/>
+            <path d="M282 263c10 0 10 13 0 13" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+          </g>
+
+          <!-- 脖子 -->
+          <path d="M150 158v32M172 158v32" stroke="#141414" stroke-width="2.2" stroke-linecap="round"/>
+
+          <!-- 身体 -->
+          <path d="M86 284v-46c0-30 33-52 74-52s74 22 74 52v46z" fill="#FBFAF8" stroke="#141414" stroke-width="2.4" stroke-linejoin="round"/>
+          <path d="M144 188c8 10 24 10 32 0" stroke="#FF5A5F" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+
+          <!-- 头 -->
+          <g class="head-g">
+            <ellipse cx="160" cy="118" rx="43" ry="45" fill="#fff" stroke="#141414" stroke-width="2.4"/>
+            <path d="M117 116c-6-1-8 8 0 10" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <path d="M203 116c6-1 8 8 0 10" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <path d="M118 110c-3-38 16-51 42-51s45 13 42 51c-3-14-9-20-16-17-5-15-19-9-26 2-8-12-25-6-30 6-5-4-9 0-12 9z" fill="#141414"/>
+            <path d="M136 100c7-4 15-3 19 1" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <path d="M165 101c5-4 13-5 19-1" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <circle cx="141" cy="124" r="13.5" fill="none" stroke="#141414" stroke-width="2.2"/>
+            <circle cx="179" cy="124" r="13.5" fill="none" stroke="#141414" stroke-width="2.2"/>
+            <path d="M154.5 124h11" stroke="#141414" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M127.5 121l-9-2M192.5 121l9-2" stroke="#141414" stroke-width="2" stroke-linecap="round"/>
+            <g class="eyes-g">
+              <circle cx="141" cy="124" r="3.8" fill="#141414"/>
+              <circle cx="179" cy="124" r="3.8" fill="#141414"/>
+            </g>
+            <path d="M160 130c-2 6-4 9-8 10" stroke="#141414" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M152 149c5 5 11 5 16 0" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+            <ellipse cx="125" cy="138" rx="6.5" ry="3.6" fill="#FFDBD6" opacity=".85"/>
+            <ellipse cx="195" cy="138" rx="6.5" ry="3.6" fill="#FFDBD6" opacity=".85"/>
+          </g>
+
+          <!-- 手臂 -->
+          <path d="M94 234c-7 20 6 38 28 42" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+          <path d="M226 234c7 18-4 32-16 36" stroke="#141414" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+
+          <!-- 本子 -->
+          <rect x="138" y="262" width="84" height="20" rx="5" fill="#FFFDF9" stroke="#141414" stroke-width="2.2"/>
+          <path d="M148 269h44M148 275h26" stroke="#DCDCDC" stroke-width="2" stroke-linecap="round"/>
+          <path d="M210 262h8v14h-8z" fill="#FF5A5F" opacity=".8"/>
+
+          <!-- 写字的手 + 笔 -->
+          <g class="hand-g">
+            <path d="M214 248l-24 22" stroke="#141414" stroke-width="3.2" stroke-linecap="round"/>
+            <path d="M195 265l-5 5" stroke="#FF5A5F" stroke-width="3.6" stroke-linecap="round"/>
+            <ellipse cx="209" cy="252" rx="10.5" ry="8" fill="#fff" stroke="#141414" stroke-width="2.2" transform="rotate(-30 209 252)"/>
+          </g>
+          <ellipse cx="134" cy="268" rx="10" ry="7.5" fill="#fff" stroke="#141414" stroke-width="2.2"/>
+        </svg>
+
+        <div class="ai-pill">
+          <div class="row"><i class="pdot"></i><div class="pt" id="aiTitle">AI 待命中</div></div>
+          <div class="ps" id="aiSub">读一遍手上的稿子</div>
+          <div class="pbar"><i></i></div>
+        </div>
+      </div>
+
+      <div class="hero-r">
+        <div class="hi">Hi 橘子头，</div>
+        <h1 class="h1" id="h1"><span class="num">0</span> 件事等你点头，<em>其余我在跑</em></h1>
+
+        <div class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+          <input id="q" placeholder="搜标题、渠道、状态…" autocomplete="off">
+          <button id="btnSearch" title="搜索">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+
+        <div class="todo-h" id="s-todo">
+          <b>要做的事情</b><span id="todoCount">·</span>
+        </div>
+        <div class="todo" id="todo"></div>
+      </div>
+    </section>
+
+    <!-- ---------- 图表 ---------- -->
+    <div class="sec-head" id="s-data"><h2>数据</h2><span>全部来自 数据/内容 下的 md</span></div>
+    <section class="charts">
+      <div class="card">
+        <div class="card-h"><b>内容分布</b><span>按阶段</span></div>
+        <div class="donut-wrap">
+          <svg class="donut" id="donut" viewBox="0 0 128 128"></svg>
+          <div class="donut-legend" id="legend"></div>
+        </div>
+        <div class="card-foot" id="donutFoot"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><b>九个环节的拥挤程度</b><span>条数 / 环</span></div>
+        <div class="srows" id="stepsChart"></div>
+        <div class="legend-row">
+          <span><i style="background:#141414"></i>已完成</span>
+          <span><i style="background:#FF5A5F"></i>进行中</span>
+          <span><i style="background:#FFB9BB"></i>等你确认</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><b>发在哪</b><span>渠道</span></div>
+        <div class="cbars" id="chanChart"></div>
+        <div class="cstats" id="chanStats"></div>
+      </div>
+    </section>
+
+    <!-- ---------- 流水线 ---------- -->
+    <div class="sec-head" id="s-board">
+      <h2>流水线</h2><span>点卡片看全程，等你的卡片左边有红条</span>
+      <span class="more" id="boardTip"></span>
+    </div>
+    <section class="board" id="board"></section>
+  </main>
+</div>
+
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer"></aside>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+const STEPS = ['调研','选题','草稿','配图','排版','发布','送审','数据','复盘'];
+
+const PHASES = [
+  {key:'讨论', name:'前期讨论', sub:'调研 · 选题 · 方案', color:'#FF5A5F'},
+  {key:'写稿', name:'写稿修改', sub:'AI 出稿 · 你改',   color:'#141414'},
+  {key:'后期', name:'后期发布', sub:'配图 · 排版 · 发布', color:'#A8B6C4'},
+  {key:'复盘', name:'复盘沉淀', sub:'数据 · 复盘结论',   color:'#E2E2E2'}
+];
+
+const GATE_INFO = {
+  '讨论':{label:'前期内容讨论', hint:'方案还只是初稿。想表达什么、给谁看、怎么描述、哪些细节必须写进去——这些定了我才动笔。', bg:'#FDE8EA'},
+  '草稿':{label:'草稿修改', hint:'初稿在这。直接改，或者告诉我要改哪个方向，我重写。', bg:'#E8F1F8'},
+  '配图':{label:'配图', hint:'几版图都出来了，挑一版；不满意就写一句想要什么感觉。', bg:'#FCF3DE'},
+  '排版':{label:'排版', hint:'排好了，按平台规范过了一遍。看一眼再放行。', bg:'#E6F2EC'}
+};
+const GATE_SHORT = {'讨论':'定方案','草稿':'改稿','配图':'挑图','排版':'过排版'};
+const GATE_ORDER = ['讨论','草稿','配图','排版'];
+
+const state = { items: [], cur: null, busy: false, q: '', onlyWait: false };
+
+/* ---------- 工具 ---------- */
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
+
+async function api(path, payload){
+  const opt = payload
+    ? {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}
+    : {};
+  const res = await fetch(path, opt);
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || '接口出错');
+  return data;
+}
+
+function setSync(kind, text){
+  $('#syncDot').className = 'dot' + (kind === 'loading' ? ' loading' : kind === 'off' ? ' off' : '');
+  $('#syncText').textContent = text;
+}
+
+let toastTimer = null;
+function toast(msg){
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 2300);
+}
+
+function norm(it){
+  const o = Object.assign({}, it);
+  o['待你确认'] = o['待你确认'] || '无';
+  o['卡住天数'] = Number(o['卡住天数'] || 0);
+  o['状态'] = o['状态'] || '';
+  o['渠道'] = o['渠道'] || '';
+  o['优先级'] = o['优先级'] || 'P2';
+  o['阶段'] = o['阶段'] || '讨论';
+  o['正文'] = o['正文'] || '';
+  STEPS.forEach(s => { if(!o[s]) o[s] = '未开始'; });
+  return o;
+}
+
+/* ---------- 数据 ---------- */
+async function loadBoard(){
+  setSync('loading', '同步中');
+  try{
+    const j = await api('/api/board');
+    state.items = (j.items || []).map(norm);
+    setSync('ok', '已连接 · ' + (j['服务时间'] || ''));
+    return true;
+  }catch(e){
+    setSync('off', '未连接');
+    return false;
+  }
+}
+
+/* ---------- 封面 ---------- */
+function renderHero(){
+  const it = state.items;
+  const waiting = it.filter(i => i['待你确认'] !== '无');
+  $('#h1').innerHTML = `<span class="num">${waiting.length || 0}</span> 件事等你点头，<em>其余我在跑</em>`;
+  document.querySelector('.charts').style.display = '';
+  document.getElementById('s-data').style.display = '';
+  document.getElementById('s-board').style.display = '';
+  $('#board').style.display = '';
+
+  // AI 正在干什么
+  const working = it.find(i => i['阶段'] === '写稿' && i['待你确认'] === '无')
+    || it.find(i => i['阶段'] === '后期' && i['待你确认'] === '无')
+    || it.find(i => i['阶段'] === '复盘');
+  if(working){
+    $('#aiTitle').textContent = 'AI 正在推进 · ' + working.id;
+    $('#aiSub').textContent = working['状态'] || '处理中';
+  }else{
+    $('#aiTitle').textContent = 'AI 待命中';
+    $('#aiSub').textContent = '手上没有在跑的稿子';
+  }
+
+  // 待办
+  const sorted = waiting.slice().sort((a, b) => {
+    const pa = GATE_ORDER.indexOf(a['待你确认']), pb = GATE_ORDER.indexOf(b['待你确认']);
+    if(pa !== pb) return pa - pb;
+    const ra = {P0:0,P1:1,P2:2}[a['优先级']] ?? 3, rb = {P0:0,P1:1,P2:2}[b['优先级']] ?? 3;
+    if(ra !== rb) return ra - rb;
+    return b['卡住天数'] - a['卡住天数'];
+  });
+
+  $('#todoCount').textContent = sorted.length
+    ? `· 共 ${sorted.length} 件，点一条直接进`
+    : '· 没有卡在你手上的';
+
+  const host = $('#todo');
+  if(!sorted.length){
+    host.innerHTML = `<div class="todo-empty">四处闸门都放行了，我在往下跑</div>`;
+    return;
+  }
+
+  host.innerHTML = sorted.slice(0, 4).map(i => {
+    const g = i['待你确认'];
+    const info = GATE_INFO[g] || {bg:'#F5F5F5'};
+    return `<div class="todo-item" data-id="${esc(i.id)}">
+      <div class="todo-n" style="background:${info.bg}">${esc(i.id)}</div>
+      <div class="todo-b">
+        <div class="todo-t">${esc(i['标题'])}</div>
+        <div class="todo-s">${esc(i['渠道'])} · ${esc(i['状态'])}</div>
+      </div>
+      <span class="chip wait">${esc(GATE_SHORT[g] || '等你')}</span>
+      <span class="todo-go"><svg viewBox="0 0 24 24"><path d="M5 12h13M12 6l6 6-6 6"/></svg></span>
+    </div>`;
+  }).join('');
+
+  if(sorted.length > 4){
+    host.innerHTML += `<div class="todo-empty">还有 ${sorted.length - 4} 件在下面流水线里</div>`;
+  }
+}
+
+/* ---------- 图表 ---------- */
+function renderDonut(){
+  const items = state.items;
+  const total = items.length;
+  const R = 50, CX = 64, CY = 64, W = 15, C = 2 * Math.PI * R;
+  let acc = 0, arcs = '';
+
+  if(!total){
+    arcs = `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="#F2F2F2" stroke-width="${W}"/>`;
+  }else{
+    PHASES.forEach(p => {
+      const n = items.filter(i => i['阶段'] === p.key).length;
+      if(!n) return;
+      const len = C * n / total;
+      const gap = total > 1 ? 3 : 0;
+      const seg = Math.max(len - gap, 1);
+      arcs += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${p.color}" stroke-width="${W}"
+        stroke-dasharray="${seg} ${C - seg}" stroke-dashoffset="${-acc}"
+        transform="rotate(-90 ${CX} ${CY})" stroke-linecap="round"/>`;
+      acc += len;
+    });
+  }
+
+  $('#donut').innerHTML = arcs + `
+    <text x="${CX}" y="${CY - 2}" text-anchor="middle" font-size="21" font-weight="700"
+      fill="#141414" font-family="inherit">${total}</text>
+    <text x="${CX}" y="${CY + 13}" text-anchor="middle" font-size="8.5"
+      fill="#B0B0B0" font-family="inherit">条内容</text>`;
+
+  const busiest = STEPS.map(s => ({
+    s, n: items.filter(i => i[s] === '进行中' || i[s] === '待确认').length
+  })).sort((a, b) => b.n - a.n)[0];
+  $('#donutFoot').textContent = (busiest && busiest.n)
+    ? `最堵的环节：${busiest.s}，${busiest.n} 条压在这`
+    : '每个环节都空着，可以开新题了';
+
+  $('#legend').innerHTML = PHASES.map(p => {
+    const n = items.filter(i => i['阶段'] === p.key).length;
+    return `<div class="lg"><i style="background:${p.color}"></i>${esc(p.name)}<b>${n}</b></div>`;
+  }).join('');
+}
+
+function renderSteps(){
+  const items = state.items;
+  const total = items.length || 1;
+  const host = $('#stepsChart');
+  host.innerHTML = STEPS.map(s => {
+    const c = v => items.filter(i => i[s] === v).length;
+    const done = c('完成'), doing = c('进行中'), wait = c('待确认'), rej = c('打回');
+    const all = done + doing + wait + rej;
+    const w = n => (n / total * 100).toFixed(2) + '%';
+    const seg = (n, col) => n ? `<i style="width:${w(n)};background:${col}"></i>` : '';
+    const empty = all === 0 ? `<i style="width:100%;background:#F7F7F7"></i>` : '';
+    return `<div class="srow" title="${esc(s)}：完成 ${done} · 进行 ${doing} · 待确认 ${wait}${rej ? ' · 打回 ' + rej : ''}">
+      <span class="sl">${esc(s)}</span>
+      <div class="strack">${empty}${seg(done,'#141414')}${seg(doing,'#FF5A5F')}${seg(wait,'#FFB9BB')}${seg(rej,'#E88B8E')}</div>
+      <span class="sn">${all || ''}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderChannels(){
+  const items = state.items;
+  const xhs = items.filter(i => String(i['渠道']).indexOf('小红书') > -1).length;
+  const wx  = items.filter(i => String(i['渠道']).indexOf('公众号') > -1).length;
+  const both = items.filter(i => String(i['渠道']).indexOf('小红书') > -1 && String(i['渠道']).indexOf('公众号') > -1).length;
+  const max = Math.max(xhs, wx, 1);
+
+  const rows = [
+    {n:'小红书', v:xhs, c:'#FF5A5F'},
+    {n:'公众号', v:wx,  c:'#141414'},
+    {n:'两边都发', v:both, c:'#A8B6C4'}
+  ];
+
+  $('#chanChart').innerHTML = rows.map(r => `
+    <div class="cbar">
+      <div class="ct">${r.n}<b>${r.v} 条</b></div>
+      <div class="ctrack"><i style="width:${(r.v / max * 100).toFixed(1)}%;background:${r.c}"></i></div>
+    </div>`).join('');
+
+  const published = items.filter(i => i['发布'] === '完成').length;
+  const withData = items.filter(i => Number(i['阅读'] || 0) > 0).length;
+  const avgStuck = items.length
+    ? (items.reduce((s, i) => s + i['卡住天数'], 0) / items.length).toFixed(1)
+    : '0';
+
+  $('#chanStats').innerHTML = `
+    <div><b>${published}</b><span>已发布</span></div>
+    <div><b>${withData}</b><span>有数据回流</span></div>
+    <div><b>${avgStuck}</b><span>平均停留/天</span></div>`;
+}
+
+/* ---------- 流水线 ---------- */
+function cardHtml(i, last){
+  const gate = i['待你确认'];
+  let chip = '';
+  if(gate !== '无'){
+    chip = `<span class="chip wait">${esc(GATE_SHORT[gate] || '等你')}</span>`;
+  }else if(i['卡住天数'] >= 7){
+    chip = `<span class="chip gray">${i['卡住天数']} 天没动</span>`;
+  }
+
+  const tags = String(i['渠道']).split(',').filter(Boolean).map(c => {
+    const cls = c.indexOf('小红书') > -1 ? 'xhs' : 'wx';
+    return `<span class="tag ${cls}">${esc(c)}</span>`;
+  }).join('');
+
+  return `<div class="card-item ${last ? 'last' : ''}" data-id="${esc(i.id)}">
+    <div class="ci-top">
+      <i class="pri ${esc(i['优先级'])}"></i>
+      <div class="ci-t">${esc(i['标题'])}</div>
+    </div>
+    <div class="ci-tags">${tags}</div>
+    <div class="ci-foot"><span class="ci-s">${esc(i['状态'])}</span>${chip}</div>
+  </div>`;
+}
+
+function renderBoard(){
+  const host = $('#board');
+  const q = state.q.trim();
+  let pool = state.onlyWait
+    ? state.items.filter(i => i['待你确认'] !== '无')
+    : state.items;
+  if(q) pool = pool.filter(i => (i['标题'] + i['渠道'] + i['状态'] + i.id).indexOf(q) > -1);
+
+  $('#boardTip').textContent = state.onlyWait
+    ? `只看等你确认 · ${pool.length} 条（点“总览”取消）`
+    : (q ? `筛选「${q}」· ${pool.length} 条` : '');
+  $('#navBoard').textContent = state.items.length;
+
+  host.innerHTML = PHASES.map(p => {
+    const rows = pool.filter(i => i['阶段'] === p.key);
+    const inner = rows.length
+      ? rows.map((i, k) => cardHtml(i, k === rows.length - 1)).join('')
+      : `<div class="col-empty">${q ? '没有匹配的' : '空的'}</div>`;
+    return `<div class="col">
+      <div class="col-h">
+        <div class="col-t"><i style="background:${p.color}"></i>${esc(p.name)}<em>${rows.length}</em></div>
+        <div class="col-s">${esc(p.sub)}</div>
+      </div>
+      ${inner}
+    </div>`;
+  }).join('');
+}
+
+/* ---------- 抽屉 ---------- */
+function renderDrawer(){
+  const cur = state.cur;
+  if(!cur) return;
+
+  const steps = STEPS.map(s => {
+    const v = cur[s];
+    const cls = v === '完成' ? 'done'
+      : v === '进行中' ? 'doing'
+      : v === '待确认' ? 'wait'
+      : v === '打回' ? 'reject' : '';
+    return `<div class="step ${cls}"><div class="pt"></div><div class="lb">${esc(s)}</div></div>`;
+  }).join('');
+
+  const gate = cur['待你确认'];
+  const gi = GATE_INFO[gate];
+  const actHtml = (gate !== '无' && gi) ? `
+    <div class="act">
+      <div class="act-h"><i></i>${esc(gi.label)} · 等你一句</div>
+      <p>${esc(gi.hint)}</p>
+      <textarea id="actNote" placeholder="打回必须写一句原因；通过可留空"></textarea>
+      <div class="act-btns">
+        <button class="btn btn-primary" data-act="pass">通过，往下走</button>
+        <button class="btn btn-danger" data-act="reject">打回重做</button>
+      </div>
+    </div>` : '';
+
+  const read = Number(cur['阅读'] || 0);
+  const dataHtml = read > 0 ? `
+    <div class="block">
+      <div class="block-h">数据回流</div>
+      <div class="metrics">
+        <div class="metric"><div class="mv">${read}</div><div class="mk">阅读</div></div>
+        <div class="metric"><div class="mv">${Number(cur['点赞']||0)}</div><div class="mk">点赞</div></div>
+        <div class="metric"><div class="mv">${Number(cur['收藏']||0)}</div><div class="mk">收藏</div></div>
+        <div class="metric"><div class="mv">${Number(cur['评论']||0)}</div><div class="mk">评论</div></div>
+      </div>
+    </div>` : '';
+
+  $('#drawer').innerHTML = `
+    <div class="dr-head">
+      <h2>${esc(cur['标题'])}</h2>
+      <button class="dr-close" data-act="close">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="dr-body">
+      <div class="block">
+        <div class="block-h">走到哪了</div>
+        <div class="steps">${steps}</div>
+        <div class="meta-row">
+          <span>渠道 <b>${esc(cur['渠道'] || '—')}</b></span>
+          <span>阶段 <b>${esc(cur['阶段'])}</b></span>
+          <span>优先级 <b>${esc(cur['优先级'])}</b></span>
+          <span>更新 <b>${esc(cur['更新'] || '—')}</b></span>
+          ${cur['卡住天数'] ? `<span>已停 <b>${cur['卡住天数']}</b> 天</span>` : ''}
+        </div>
+      </div>
+      ${actHtml}
+      <div class="block">
+        <div class="block-h">正文</div>
+        <div class="doc">${mdToHtml(cur['正文'])}</div>
+      </div>
+      ${dataHtml}
+    </div>`;
+}
+
+function mdToHtml(md){
+  const lines = String(md || '').replace(/\r/g, '').split('\n');
+  let out = '', inList = false, buf = [];
+
+  const inline = t => esc(t)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`(.+?)`/g, '<code>$1</code>');
+  const flushP = () => {
+    if(buf.length){ out += '<p>' + buf.map(inline).join('<br>') + '</p>'; buf = []; }
+  };
+  const closeList = () => { if(inList){ out += '</ul>'; inList = false; } };
+
+  lines.forEach(raw => {
+    const line = raw.trim();
+    if(!line){ flushP(); closeList(); return; }
+    if(line.indexOf('### ') === 0){ flushP(); closeList(); out += '<h3>' + inline(line.slice(4)) + '</h3>'; return; }
+    if(line.indexOf('## ') === 0){ flushP(); closeList(); out += '<h2>' + inline(line.slice(3)) + '</h2>'; return; }
+    if(line.indexOf('# ') === 0){ flushP(); closeList(); out += '<h2>' + inline(line.slice(2)) + '</h2>'; return; }
+    if(/^[-*]\s+/.test(line)){
+      flushP();
+      if(!inList){ out += '<ul>'; inList = true; }
+      out += '<li>' + inline(line.replace(/^[-*]\s+/, '')) + '</li>';
+      return;
+    }
+    closeList(); buf.push(line);
+  });
+
+  flushP(); closeList();
+  return out || '<p style="color:#B5B5B5">（正文还没写）</p>';
+}
+
+/* ---------- 汇总 ---------- */
+function renderMe(){
+  const it = state.items;
+  $('#meRun').textContent = it.filter(i => i['阶段'] !== '复盘').length;
+  $('#meWait').textContent = it.filter(i => i['待你确认'] !== '无').length;
+  $('#meDone').textContent = it.filter(i => i['发布'] === '完成').length;
+  $('#navTodo').textContent = it.filter(i => i['待你确认'] !== '无').length;
+}
+
+function refreshAll(){
+  renderMe();
+  renderHero();
+  renderDonut();
+  renderSteps();
+  renderChannels();
+  renderBoard();
+  if(state.cur) renderDrawer();
+}
+
+/* ---------- 交互 ---------- */
+function openItem(id){
+  const it = state.items.find(i => String(i.id) === String(id));
+  if(!it) return;
+  state.cur = it;
+  renderDrawer();
+  $('#drawer').classList.add('on');
+  $('#mask').classList.add('on');
+  const body = document.querySelector('.dr-body');
+  if(body) body.scrollTop = 0;
+}
+
+function closeDrawer(){
+  state.cur = null;
+  $('#drawer').classList.remove('on');
+  $('#mask').classList.remove('on');
+}
+
+async function doConfirm(gate, decision){
+  if(state.busy || !state.cur) return;
+  const noteEl = $('#actNote');
+  const note = noteEl ? noteEl.value.trim() : '';
+
+  if(decision === 'reject' && !note){
+    toast('打回得写一句原因，不然我不知道往哪改');
+    if(noteEl) noteEl.focus();
+    return;
+  }
+
+  state.busy = true;
+  const id = state.cur.id;
+  try{
+    const j = await api('/api/confirm', {id, gate, decision, note});
+    toast(decision === 'pass' ? '已放行，接着往下跑' : '已打回，等返工');
+    await loadBoard();
+    state.cur = state.items.find(i => String(i.id) === String(j.item.id)) || null;
+    refreshAll();
+    if(!state.cur) closeDrawer();
+  }catch(e){
+    toast(e.message);
+  }finally{
+    state.busy = false;
+  }
+}
+
+function showOffline(){
+  $('#syncDot').className = 'dot off';
+  $('#syncText').textContent = '未连接';
+  $('#h1').innerHTML = '先启动本地服务，<em>数据才读得到</em>';
+  document.querySelector('.charts').style.display = 'none';
+  $('#todo').innerHTML = `<div class="todo-empty">连不上本地服务，待办读不到</div>`;
+  document.getElementById('s-data').style.display = 'none';
+  document.getElementById('s-board').style.display = 'none';
+  const host = $('#board');
+  host.style.display = 'block';
+  host.innerHTML = `<div class="blank">
+    读不到 数据/内容 下的 md。<br><br>
+    先双击 <b>启动工作台.bat</b>，浏览器会自动打开这个页面；<br>
+    直接双击 <b>工作台.html</b> 是读不到本地文件的。
+  </div>`;
+  $('#legend').innerHTML = '';
+  $('#donutFoot').textContent = '';
+  $('#stepsChart').innerHTML = '';
+  $('#chanChart').innerHTML = '';
+  $('#chanStats').innerHTML = '';
+  $('#donut').innerHTML = '';
+}
+
+/* 导航 */
+function setNav(target){
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('on', n.dataset.target === target);
+  });
+}
+
+document.querySelectorAll('.nav-item').forEach(el => {
+  el.addEventListener('click', () => {
+    const target = el.dataset.target;
+    if(target === 's-todo'){
+      state.onlyWait = !state.onlyWait;
+      setNav(state.onlyWait ? 's-todo' : 's-overview');
+      renderBoard();
+      if(state.onlyWait){
+        document.getElementById('s-board').scrollIntoView({behavior:'smooth', block:'start'});
+        toast('只看等你确认的 ' + state.items.filter(i => i['待你确认'] !== '无').length + ' 条');
+      }
+      return;
+    }
+    const t = document.getElementById(target);
+    if(!t) return;
+    state.onlyWait = false;
+    setNav(target);
+    renderBoard();
+    t.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+});
+
+/* 滚动高亮 */
+const mainEl = document.querySelector('.main');
+const secs = ['s-overview','s-data','s-board']
+  .map(id => document.getElementById(id)).filter(Boolean)
+  .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+function syncNav(){
+  if(state.onlyWait) return;
+  const mt = mainEl.getBoundingClientRect().top;
+  const line = Math.min(mainEl.clientHeight * 0.42, 360);
+  let cur = secs[0] ? secs[0].id : 's-overview';
+  secs.forEach(s => {
+    if(s.getBoundingClientRect().top - mt <= line) cur = s.id;
+  });
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('on', n.dataset.target === cur);
+  });
+}
+mainEl.addEventListener('scroll', syncNav, {passive:true});
+syncNav();
+
+/* 搜索 */
+$('#q').addEventListener('input', e => {
+  state.q = e.target.value;
+  renderBoard();
+});
+$('#btnSearch').addEventListener('click', () => renderBoard());
+
+/* 刷新 */
+$('#btnReload').addEventListener('click', async () => {
+  const ok = await loadBoard();
+  if(!ok){ showOffline(); return; }
+  refreshAll();
+  toast('已刷新');
+});
+
+/* 点击 */
+$('#mask').addEventListener('click', closeDrawer);
+$('#todo').addEventListener('click', e => {
+  const row = e.target.closest('.todo-item');
+  if(row) openItem(row.dataset.id);
+});
+$('#board').addEventListener('click', e => {
+  const card = e.target.closest('.card-item');
+  if(card) openItem(card.dataset.id);
+});
+$('#drawer').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if(!btn) return;
+  const act = btn.dataset.act;
+  if(act === 'close'){ closeDrawer(); return; }
+  if(act === 'pass' || act === 'reject'){
+    doConfirm(state.cur ? state.cur['待你确认'] : '', act);
+  }
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && state.cur) closeDrawer();
+  if(e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+    e.preventDefault(); $('#q').focus();
+  }
+});
+
+/* ---------- 启动 ---------- */
+(async function init(){
+  const ok = await loadBoard();
+  if(!ok){ showOffline(); return; }
+  refreshAll();
+  syncNav();
+})();
+</script>
+</body>
+</html>
