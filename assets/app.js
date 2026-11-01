@@ -41,6 +41,13 @@ function renderMd(text){
   });
   s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
   s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  // 链接：[文字](url) 和光秃秃的 url 都认
+  s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+    (m, text, url) => `<a href="${url}" target="_blank" rel="noopener">${text}</a>`);
+  s = s.replace(/(^|[\s（(>])(https?:\/\/[^\s<>"）)]+)/g, (m, pre, url) => {
+    const tail = url.length > 48 ? url.slice(0, 46) + '…' : url;
+    return `${pre}<a href="${url}" target="_blank" rel="noopener">${tail}</a>`;
+  });
   s = s.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
   s = s.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
 
@@ -363,11 +370,10 @@ function autoGrow(el){
   el.style.height = Math.min(el.scrollHeight, 190) + 'px';
 }
 
-/* ---------- 五阶段 ---------- */
-const STAGES = ['讨论', '待审', '配图', '排版', '复盘'];
+/* ---------- 四阶段 ---------- */
+const STAGES = ['讨论', '正文', '配图', '排版'];
 const STAGE_LABEL = {
-  '讨论': '选题与讨论', '待审': '审核修改', '配图': '配图',
-  '排版': '排版与发布', '复盘': '数据复盘'
+  '讨论': '选题与讨论', '正文': '正文', '配图': '配图', '排版': '排版与发布'
 };
 
 function stageAt(d){
@@ -375,7 +381,7 @@ function stageAt(d){
   return i < 0 ? 0 : i;
 }
 
-/* 一条稿件的进度条。五格，走过的填红，待重做的描虚线。 */
+/* 一条稿件的进度条。四格，走过的填红，待重做的描虚线。 */
 function stageBar(d, opts){
   opts = opts || {};
   const here = stageAt(d);

@@ -53,7 +53,7 @@ function renderTop(){
   const stats = STATE['统计'] || {};
   const week = stats['本周'] || {};
   const todos = STATE['待办'] || [];
-  const drafts = (STATE['稿件'] || []).filter(d => d['阶段'] !== '复盘');
+  const drafts = STATE['稿件'] || [];
   const who = (STATE['当前身份'] || {})['名称'] || '';
 
   $('#crumb').innerHTML = `<b>${esc(dayLabel(todayStr()))}</b> · ${esc(who)}`;
@@ -85,7 +85,7 @@ function kpis(){
   const stats = STATE['统计'] || {};
   const week = stats['本周'] || {};
   const total = stats['累计'] || {};
-  const drafts = (STATE['稿件'] || []).filter(d => d['阶段'] !== '复盘');
+  const drafts = STATE['稿件'] || [];
   const todos = STATE['待办'] || [];
 
   const card = (v, k, d) => `<div class="kpi">

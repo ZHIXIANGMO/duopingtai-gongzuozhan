@@ -7,6 +7,7 @@
 零依赖：只用标准库。只监听 127.0.0.1。
 """
 
+import base64
 import csv
 import json
 import os
@@ -20,7 +21,7 @@ import urllib.request
 import webbrowser
 from datetime import date, datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -35,6 +36,7 @@ DIRS = {
     "稿件": os.path.join(DATA, "稿件"),
 }
 PUB_CSV = os.path.join(DATA, "投放.csv")
+ASSET_DIR = os.path.join(DATA, "素材")
 SETTINGS = os.path.join(DATA, "设置.json")
 LOCAL_CONF = os.path.join(ROOT, "本地配置.json")
 
@@ -49,23 +51,25 @@ ORDER = {
     "灵感": ["id", "来源", "原话", "捕获", "关联身份", "状态"],
     "选题": ["id", "来自灵感", "标题候选", "正方", "反方", "我站", "我可能错在哪",
            "目标身份", "目标平台", "优先级", "状态", "创建"],
-    "稿件": ["id", "选题", "身份", "版本", "阶段", "状态", "重做", "字数", "创建", "更新"],
+    "稿件": ["id", "选题", "身份", "版本", "阶段", "配图形式", "重做", "字数", "创建", "更新"],
 }
 
-# 五阶段流水线。顺序就是进度条的格子顺序，改这里，前端跟着变。
-STAGES = ["讨论", "待审", "配图", "排版", "复盘"]
+# 四阶段流水线。顺序就是进度条的格子顺序，改这里，前端跟着变。
+# 复盘不在这里：数据在数据页看，稿件只走到「发出去」为止。
+STAGES = ["讨论", "正文", "配图", "排版"]
 STAGE_LABEL = {
     "讨论": "选题与讨论",
-    "待审": "审核修改",
+    "正文": "正文",
     "配图": "配图",
     "排版": "排版与发布",
-    "复盘": "数据复盘",
 }
 # 每个阶段对应的正文小节。退回去改正文，后面这些小节就要重做。
-STAGE_SECTION = {"配图": "配图", "排版": "排版", "复盘": "复盘"}
+STAGE_SECTION = {"配图": "配图", "排版": "排版"}
 # 旧稿件的「状态」映射到阶段。只在读的时候兜底，不动老文件。
-LEGACY_STAGE = {"构思": "讨论", "初稿": "待审", "打磨": "待审",
-                "待确认": "待审", "定稿": "排版"}
+LEGACY_STAGE = {"构思": "讨论", "初稿": "正文", "打磨": "正文", "待审": "正文",
+                "待确认": "正文", "定稿": "排版", "复盘": "排版"}
+# 配图形式：公众号图 / 小红书图 / 不配图。默认公众号。
+IMAGE_MODES = ["公众号", "小红书", "不配图"]
 
 LOG_CSV = os.path.join(DATA, "日志.csv")
 LOG_FIELDS = ["时间", "日期", "类型", "对象", "动作", "备注"]
@@ -291,10 +295,12 @@ def sections_of(body):
 
 
 def stage_of(item):
-    """读稿件的阶段。老文件只有「状态」，按映射兜底，不改老文件。"""
+    """读稿件的阶段。老文件可能写着旧名字（待审/复盘），按映射兜底，不动老文件。"""
     s = str(item.get("阶段") or "").strip()
     if s in STAGES:
         return s
+    if s in LEGACY_STAGE:
+        return LEGACY_STAGE[s]
     return LEGACY_STAGE.get(str(item.get("状态") or "").strip(), "讨论")
 
 
@@ -380,7 +386,9 @@ def advance_stage(kind, item_id, target, note=""):
 
 # ---------------------------------------------------------------- 开稿
 
-DRAFT_TEMPLATE = """## 正文
+DRAFT_TEMPLATE = """## 素材
+
+## 正文
 
 ## 这版改了什么
 
@@ -391,8 +399,6 @@ v1：从选题 {topic} 开的新稿。
 ## 配图
 
 ## 排版
-
-## 复盘
 """
 
 
@@ -439,6 +445,74 @@ def new_draft(topic_id, ident_id=""):
     fresh, fresh_body = parse_md(path)
     fresh["正文"] = fresh_body
     return fresh
+
+
+# ---------------------------------------------------------------- 素材文件
+
+# 拖进来的附件就放 数据/素材/<稿号>/ 下，和 md 一样不进仓库。
+ASSET_OK = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf",
+            ".txt", ".md", ".docx", ".csv", ".html"}
+ASSET_MAX = 20 * 1024 * 1024
+
+
+def asset_dir(draft_id):
+    safe = re.sub(r"[^0-9A-Za-z_-]", "", str(draft_id or ""))
+    if not safe:
+        raise ValueError("稿号不对：%r" % draft_id)
+    return os.path.join(ASSET_DIR, safe)
+
+
+def list_assets(draft_id):
+    """列出这篇稿的附件。目录不存在就当没有，别报错。"""
+    try:
+        d = asset_dir(draft_id)
+    except ValueError:
+        return []
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for name in sorted(os.listdir(d)):
+        path = os.path.join(d, name)
+        if not os.path.isfile(path):
+            continue
+        ext = os.path.splitext(name)[1].lower()
+        out.append({
+            "名字": name,
+            "地址": "/数据/素材/%s/%s" % (os.path.basename(d), quote(name)),
+            "大小": os.path.getsize(path),
+            "是图": ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"},
+        })
+    return out
+
+
+def save_asset(draft_id, name, b64):
+    """浏览器把文件读成 base64 传上来，这里落盘。"""
+    raw = os.path.basename(str(name or "")).strip()
+    raw = re.sub(r'[\\/:*?"<>|]', "_", raw)
+    if not raw:
+        raise ValueError("文件没名字")
+    ext = os.path.splitext(raw)[1].lower()
+    if ext not in ASSET_OK:
+        raise ValueError("这个类型先不支持：%s" % (ext or "无扩展名"))
+    try:
+        blob = base64.b64decode(str(b64 or "").split(",")[-1], validate=False)
+    except Exception:
+        raise ValueError("文件内容解不开")
+    if not blob:
+        raise ValueError("文件是空的")
+    if len(blob) > ASSET_MAX:
+        raise ValueError("文件超过 20MB")
+
+    d = asset_dir(draft_id)
+    os.makedirs(d, exist_ok=True)
+    base, i = raw, 1
+    while os.path.exists(os.path.join(d, raw)):
+        stem, ext2 = os.path.splitext(base)
+        raw = "%s-%d%s" % (stem, i, ext2)
+        i += 1
+    with open(os.path.join(d, raw), "wb") as f:
+        f.write(blob)
+    return raw
 
 
 # ---------------------------------------------------------------- 日志
@@ -648,12 +722,12 @@ def build_todos(state):
     for d in state["稿件"]:
         here = stage_of(d)
         redo = redo_list(d)
-        if here == "待审":
+        if here == "正文":
             todos.append({
                 "级别": "red",
-                "类型": "稿件待你过目",
+                "类型": "正文等你过目",
                 "标题": "%s %s" % (d["id"], d.get("选题") or ""),
-                "说明": "改完了，等你看一眼。过了就进配图。",
+                "说明": "正文写完了，等你改。改到能发就进配图。",
                 "目标": {"kind": "稿件", "id": d["id"]},
             })
         elif redo:
@@ -911,6 +985,11 @@ def build_state(ident_id=""):
         secs = sections_of(d.get("正文") or "")
         d["有产物"] = [s for s in STAGES if STAGE_SECTION.get(s)
                      and (secs.get(STAGE_SECTION[s]) or "").strip()]
+        # 素材：AI 搜的和粘的链接都落在「## 素材」；拖进来的文件在 数据/素材/<id>/
+        d["素材"] = secs.get("素材") or ""
+        d["文件"] = list_assets(d["id"])
+        mode = str(d.get("配图形式") or "").strip()
+        d["配图形式"] = mode if mode in IMAGE_MODES else "公众号"
 
     for t in state["选题"]:
         t["稿件"] = [d["id"] for d in state["稿件"] if d.get("选题") == t["id"]]
@@ -1303,6 +1382,11 @@ class Handler(SimpleHTTPRequestHandler):
                 item = save_section(p.get("kind", "身份"), p.get("id", ""),
                                     p.get("小节", ""), p.get("内容", ""))
                 return self._json({"ok": True, "item": item})
+            if path == "/api/asset":
+                p = self._body()
+                name = save_asset(p.get("稿件", ""), p.get("名字", ""), p.get("数据", ""))
+                return self._json({"ok": True, "名字": name,
+                                   "文件": list_assets(p.get("稿件", ""))})
             if path == "/api/stage":
                 p = self._body()
                 item = advance_stage(p.get("kind", "稿件"), p.get("id", ""),

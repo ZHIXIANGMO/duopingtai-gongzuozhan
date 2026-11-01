@@ -59,24 +59,23 @@ let D = null;              // 当前稿件
 let TOPIC = null;          // 它挂的选题
 let HISTORY = [];
 let SENDING = false;
+let BODY_TAB = 'edit';     // 正文格：编辑 / 预览
 
 const DRAFT_ID = new URLSearchParams(location.search).get('id') || '';
 
 /* 每个阶段的打开方式不一样 */
 const OPENERS = {
-  '讨论': '这条还在讨论。把你想说的倒出来，我来挑哪些能用、哪些是空的。素材够了我就写初稿。',
-  '待审': '初稿在这儿。想改哪段直接说，左边也能自己改。改完我就把稿子推去配图。',
-  '配图': '到配图了。说说想要什么调性，或者我先给三版配图思路你挑。',
-  '排版': '排版阶段。先定开头三行和配图位置，还是你想先看整篇节奏？',
-  '复盘': '发出去了。数据贴给我，或者我按现有投放数据给个判断：哪句留住了人。'
+  '讨论': '这条还在讨论。把你想说的倒出来，我来挑哪些能用、哪些是空的。素材够了我就写正文。',
+  '正文': '正文在这儿。想改哪段直接说，左边 md 也能自己改。改完我把稿子推去配图。',
+  '配图': '到配图了。先说配哪种：公众号横图、小红书竖图，还是这篇不配图。',
+  '排版': '排版这儿。左边能切电脑和手机看，字号行距都能调，调好了复制走。'
 };
 
 const NEXT_LABEL = {
-  '讨论': '初稿有了，去审 →',
-  '待审': '审过了，进配图 →',
+  '讨论': '素材够了，写正文 →',
+  '正文': '正文定了，去配图 →',
   '配图': '图定了，去排版 →',
-  '排版': '发出去了，进复盘 →',
-  '复盘': ''
+  '排版': ''
 };
 
 function curStage(){
@@ -122,17 +121,6 @@ function sec(title, html, note){
   </div>`;
 }
 
-/* 讨论阶段：左边就是正文本身。素材、冲突这些 AI 自己会读，不摆给人看 */
-function panelDiscuss(){
-  const body = bodyText();
-  return `
-    ${sec('正文', `<textarea class="dedit" id="fBody" rows="18"
-        placeholder="右边聊，聊出来的东西会落在这里。想自己先写两句也行。">${esc(body)}</textarea>
-      <div class="drow"><button class="btn btn-sm" id="saveBody">保存正文</button></div>`,
-      body ? countWords(body) + ' 字' : '还没初稿')}
-    <div class="dtip">AI 写的东西不会自己进来。它给完，你点「应用」才落盘。</div>`;
-}
-
 function countWords(s){
   return String(s || '').replace(/\s/g, '').length;
 }
@@ -145,50 +133,192 @@ function sectionOf(text, name){
   return '';
 }
 
+function sectionText(name){
+  return sectionOf(D['正文'], name);
+}
+
 function bodyText(){
   return sectionOf(D['正文'], '正文');
 }
 
-function panelJudge(){
-  return `
-    ${sec('正文', `<textarea class="dedit" id="fBody" rows="12">${esc(bodyText())}</textarea>
-      <div class="drow"><button class="btn btn-sm" id="saveBody">保存正文</button>
-      <span class="dtip" style="margin:0;align-self:center">改正文会把后面做过的配图/排版标成待重做</span></div>`, D['字数'] + ' 字')}
-    <div class="dtip">左边可以直接改，也可以在右边让 AI 改某一段。改到你觉得能发，就往下走。</div>`;
+function isMissing(v){
+  const s = String(v || '').trim();
+  // 模板占位也算空：待补 / （待补…） / 无 / -
+  return !s || s === '待补' || s === '无' || s === '-' ||
+    s.startsWith('（待补') || s.startsWith('(待补');
 }
 
-function panelStage(key, hint){
-  const redo = redoNow().indexOf(key) >= 0;
-  const content = sectionText(key);
-  return `
-    ${redo ? `<div class="dwarn">正文改过了，这版${esc(STAGE_LABEL[key])}对不上。重做一次会清掉旧的，旧稿留在 .历史/作废。</div>` : ''}
-    ${sec(STAGE_LABEL[key], `<textarea class="dedit" id="fSec" rows="9" placeholder="${esc(hint)}">${esc(content)}</textarea>
-      <div class="drow"><button class="btn btn-sm" id="saveSec">保存</button></div>`, content ? content.length + ' 字' : '还没写')}
-    <div class="dtip">也可以让 AI 直接写进这一节。它给的东西要你点「应用」才会落盘。</div>`;
-}
+/* ① 选题与讨论：只看，一个字都不改。素材从这三个口子进来 */
+function panelDiscuss(){
+  const t = TOPIC || {};
+  const tbody = t['正文'] || '';
 
-function sectionText(name){
-  const raw = D['正文'] || '';
-  for(const chunk of raw.split(/^## /m)){
-    if(chunk.startsWith(name)) return chunk.slice(name.length).trim();
+  // 选题本身：有内容才显示，空的整块不出现
+  let topicHtml = '';
+  if(TOPIC){
+    const info = sectionOf(tbody, '要传的信息');
+    const detail = sectionOf(tbody, '必须写进去的细节');
+    const conflict = [['正方', t['正方']], ['反方', t['反方']],
+                      ['我站', t['我站']], ['我可能错在哪', t['我可能错在哪']]]
+      .filter(([, v]) => !isMissing(v));
+
+    topicHtml = `
+      <div class="dtopic">
+        <div class="dtopic-m">选题 ${esc(t.id)}${t['目标平台'] ? ' · ' + esc(t['目标平台']) : ''}</div>
+        ${!isMissing(info) ? `<div class="dtopic-b">${renderMd(info)}</div>` : ''}
+        ${!isMissing(detail) ? `<div class="dtopic-b"><b>写进去的细节</b>${renderMd(detail)}</div>` : ''}
+        ${conflict.length ? `<div class="dconf">${conflict.map(([k, v]) =>
+          `<div class="dconf-i"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>` : ''}
+        ${(!isMissing(info) || !isMissing(detail) || conflict.length) ? '' :
+          '<div class="dtopic-b" style="color:#B5B5B5">选题还是空的。素材和想法都在右边聊，够了再写。</div>'}
+      </div>`;
+  } else {
+    topicHtml = '<div class="dbox muted">这篇稿还没挂到选题上，左边暂时空着。回选题页挂一条再来。</div>';
   }
-  return '';
+
+  // 素材：AI 搜的、你粘的链接，都算这里
+  const mat = D['素材'] || '';
+  const matHtml = `
+    <div class="dmat">${mat ? renderMd(mat) : '<span style="color:#B5B5B5">还空着。让 AI 去搜，或者把链接粘在下面。</span>'}</div>
+    <div class="drow dadd">
+      <input class="dinput" id="matUrl" placeholder="粘一个链接，回车加进素材">
+      <button class="btn btn-sm" id="addMat">加进去</button>
+    </div>`;
+
+  // 文件：拖进来，或者点
+  const files = D['文件'] || [];
+  const fileHtml = `
+    <div class="dfiles" id="dropZone">
+      ${files.length ? files.map(f => `
+        <a class="dfile-i" href="${esc(f['地址'])}" target="_blank" rel="noopener">
+          ${f['是图'] ? `<img src="${esc(f['地址'])}" alt="">` : '<span class="dfile-x">' + esc((f['名字'].split('.').pop() || '').toUpperCase()) + '</span>'}
+          <i>${esc(f['名字'])}</i>
+        </a>`).join('') : '<div class="dfile-e">把 pdf、图、网页截图拖到这里</div>'}
+      <label class="dfile-add">＋<input type="file" id="fileInput" multiple hidden></label>
+    </div>`;
+
+  return `${topicHtml}
+    ${sec('素材', matHtml, mat ? '只读' : '')}
+    ${sec('文件', fileHtml, files.length ? files.length + ' 个' : '')}
+    <div class="dtip">这一格不改字。素材够了，右边说一句，AI 写正文去下一格。</div>`;
 }
 
-function panelReview(){
-  const pubs = (STATE['投放'] || []).filter(p => p['稿件'] === D.id);
-  const rows = pubs.map(p => `<div class="drow2">
-      <span class="drow2-d">${esc(p['发布日'])}</span>
-      <span class="drow2-a">${esc(p['账号名'])}</span>
-      <span class="drow2-n num">${fmt(p['阅读'])}</span>
-      <span class="drow2-n num">${fmt(p['互动'])}</span>
-    </div>`).join('') || '<div class="dbox muted">还没有投放记录。发布后在数据页手填，或者用书签脚本抓。</div>';
+/* ② 正文：Markdown 编辑窗口 */
+function panelBody(){
+  const body = bodyText();
+  const view = BODY_TAB === 'view';
+  const tabs = `<div class="dtabs">
+    <button class="dtab ${view ? '' : 'on'}" data-tab="edit">编辑</button>
+    <button class="dtab ${view ? 'on' : ''}" data-tab="view">预览</button>
+  </div>`;
+
+  const area = view
+    ? `<div class="dmd mdview" id="mdView">${body ? renderMd(body) : '<span style="color:#B5B5B5">还没有正文</span>'}</div>`
+    : `<textarea class="dedit mdcode" id="fBody" rows="18"
+        placeholder="Markdown 写。段落空一行，小标题写 ##。">${esc(body)}</textarea>
+       <div class="drow"><button class="btn btn-sm" id="saveBody">保存</button></div>`;
 
   return `
-    ${pubs.length ? sec('这次发的数据', `<div class="dtbl">
-      <div class="drow2 h"><span class="drow2-d">日期</span><span class="drow2-a">账号</span>
-        <span class="drow2-n">阅读</span><span class="drow2-n">互动</span></div>${rows}</div>`) : sec('这次发的数据', rows)}
-    ${panelStage('复盘', '哪句留住了人？哪个平台不一样？下次改什么？')}`;
+    ${sec('正文', `${tabs}${area}`, countWords(body) + ' 字')}
+    <div class="dtip">左边是 md 源码，切「预览」看渲染结果。改完记得保存，后面的配图排版会对不上。</div>`;
+}
+
+/* ③ 配图：先把位置留出来。公众号图 / 小红书图，二选一，也可以不配 */
+const IMAGE_SPEC = {
+  '公众号': { 说明: '一张横封面 + 文中插图。封面 2.35:1（900×383）',
+              位: [{ n: '封面', r: '900×383' }, { n: '内文图 1', r: '横图' },
+                   { n: '内文图 2', r: '横图' }, { n: '内文图 3', r: '横图' }] },
+  '小红书': { 说明: '3:4 竖图一组，4 到 6 张。首图决定点击',
+              位: [{ n: '首图', r: '3:4' }, { n: '第 2 张', r: '3:4' },
+                   { n: '第 3 张', r: '3:4' }, { n: '第 4 张', r: '3:4' }] },
+  '不配图': { 说明: '纯文字。小红书不适合，公众号偶尔可以', 位: [] }
+};
+
+function panelImage(){
+  const cur = D['配图形式'] || '公众号';
+  const spec = IMAGE_SPEC[cur] || IMAGE_SPEC['公众号'];
+
+  const cards = ['公众号', '小红书', '不配图'].map(k => `
+    <button class="dimg ${k === cur ? 'on' : ''}" data-mode="${k}">
+      <b>${esc(k)}${k === '不配图' ? '' : '图'}</b>
+      <span>${esc(IMAGE_SPEC[k].说明)}</span>
+    </button>`).join('');
+
+  const slots = spec.位.map((p, i) => `
+    <div class="dslot ${cur === '公众号' && i === 0 ? 'wide' : ''}">
+      <div class="dphase">${esc(p.r)}</div>
+      <i>${esc(p.n)}</i>
+    </div>`).join('');
+
+  return `
+    ${sec('配哪种图', `<div class="dimgs">${cards}</div>`,
+      '只能选一种，两种不同时做')}
+    ${cur === '不配图' ? sec('图位', '<div class="dbox muted">不配图，这一篇纯文字。</div>')
+      : sec('图位', `<div class="dslots ${cur === '小红书' ? 'vert' : ''}">${slots}</div>`)}
+    <div class="dtip">图位先留着。接出图之后这里放真图，现在只能定数量和张幅。</div>`;
+}
+
+/* ④ 排版与发布：预览 + 三个控件 + 复制 / 推送 */
+const LAYOUT_DEFAULT = { 字号: 16, 行距: 1.9, 字距: 0, 主题: '纸白', 设备: '电脑' };
+const THEMES = {
+  '纸白': { 底: '#FFFFFF', 字: '#1A1A1A' },
+  '暖米': { 底: '#FBF7EF', 字: '#2B2620' },
+  '灰面': { 底: '#F6F6F7', 字: '#1F1F1F' }
+};
+
+function layoutCfg(){
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem('layout:' + DRAFT_ID) || '{}'); }catch(e){}
+  return Object.assign({}, LAYOUT_DEFAULT, saved || {});
+}
+
+function panelLayout(){
+  const c = layoutCfg();
+  const th = THEMES[c.主题] || THEMES['纸白'];
+  const body = bodyText();
+
+  const slider = (id, key, min, max, step, unit) => `
+    <label class="dctl">
+      <span>${key}</span>
+      <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${c[key]}">
+      <b class="num" id="${id}v">${c[key]}${unit || ''}</b>
+    </label>`;
+
+  return `
+    ${sec('预览', `
+      <div class="dbar">
+        <div class="dseg2">
+          <button class="dtab ${c.设备 === '电脑' ? 'on' : ''}" data-dev="电脑">电脑上</button>
+          <button class="dtab ${c.设备 === '手机' ? 'on' : ''}" data-dev="手机">手机上</button>
+        </div>
+        <div class="dthemes">${Object.keys(THEMES).map(k =>
+          `<button class="dtheme ${k === c.主题 ? 'on' : ''}" data-theme="${k}">${k}</button>`).join('')}</div>
+      </div>
+      <div class="dstagebox ${c.设备 === '手机' ? 'phone' : ''}">
+        <div class="dpaper" id="dPaper" style="--fs:${c.字号}px;--lh:${c.行距};--ls:${c.字距}px;background:${th.底};color:${th.字}">
+          ${body ? renderMd(body) : '<p style="color:#B5B5B5">还没有正文</p>'}
+        </div>
+      </div>`,
+      c.设备 + ' · ' + c.主题)}
+
+    ${sec('排版', `
+      <div class="dctls">
+        ${slider('cSize', '字号', 13, 22, 1, 'px')}
+        ${slider('cLine', '行距', 1.3, 2.4, 0.1, '')}
+        ${slider('cSpace', '字距', -0.5, 2, 0.1, 'px')}
+      </div>`, '改完立刻生效')}
+
+    ${sec('拿出去', `
+      <div class="drow">
+        <button class="btn btn-primary btn-sm" id="copyRich">复制排版</button>
+        <select class="dinput" id="pubTo">
+          <option>公众号</option><option>小红书</option>
+          <option>抖音</option><option>B站</option>
+        </select>
+        <button class="btn btn-sm" id="pushBtn" disabled title="平台接口还没接，先把入口留着">推送到平台</button>
+      </div>
+      <div class="dtip" style="margin:8px 0 0">推送是空的：四个平台都拿不到发布权限。复制能用，
+        粘到公众号后台不掉格式。</div>`)}`;
 }
 
 function renderPanel(){
@@ -196,14 +326,17 @@ function renderPanel(){
   const host = $('#dPanel');
   let html = '';
   if(st === '讨论') html = panelDiscuss();
-  else if(st === '待审') html = panelJudge();
-  else if(st === '配图') html = panelStage('配图', '封面写什么、放几张、什么调性。写完让 AI 按这个出图。');
-  else if(st === '排版') html = panelStage('排版', '开头三行、分段节奏、配图插在哪、平台差异。');
-  else html = panelReview();
+  else if(st === '正文') html = panelBody();
+  else if(st === '配图') html = panelImage();
+  else html = panelLayout();
+
+  if(redoNow().indexOf(st) >= 0){
+    html = `<div class="dwarn">正文改过了，这一格对不上，得重做一遍。旧的留着能看，重做才归档。</div>` + html;
+  }
 
   const next = NEXT_LABEL[st];
   html += `<div class="dnext">
-    ${next ? `<button class="btn btn-primary" id="goNext">${esc(next)}</button>` : '<span class="dtip" style="margin:0">这条已经走完了。要改，点上面进度条退回哪一格。</span>'}
+    ${next ? `<button class="btn btn-primary" id="goNext">${esc(next)}</button>` : '<span class="dtip" style="margin:0">走到头了。发了以后数据在数据页看。</span>'}
     ${redoNow().length ? `<span class="dtip" style="margin:0">${esc(redoNow().join(' / '))} 待重做</span>` : ''}
   </div>`;
 
@@ -212,6 +345,7 @@ function renderPanel(){
 }
 
 function bindPanel(){
+  /* 正文：保存 + 编辑/预览 切换 */
   const fBody = $('#fBody');
   if(fBody){
     $('#saveBody').addEventListener('click', async ev => {
@@ -223,16 +357,140 @@ function bindPanel(){
       finally{ ev.target.disabled = false; }
     });
   }
+  document.querySelectorAll('.dtabs .dtab').forEach(b => {
+    b.addEventListener('click', () => { BODY_TAB = b.dataset.tab; renderPanel(); });
+  });
 
-  const fSec = $('#fSec');
-  if(fSec){
-    $('#saveSec').addEventListener('click', async ev => {
-      ev.target.disabled = true;
+  /* 讨论：粘链接 → 追加进「## 素材」 */
+  const add = $('#addMat');
+  if(add){
+    const fire = async () => {
+      const box = $('#matUrl');
+      const url = box.value.trim();
+      if(!url) return;
+      const old = D['素材'] || '';
+      const line = /^https?:\/\//.test(url) ? '- ' + url : '- ' + url;
+      const next = (old ? old.replace(/\s+$/, '') + '\n' : '') + line;
+      add.disabled = true;
       try{
-        await postJSON('/api/section', {kind:'稿件', id:D.id, '小节': curStage(), '内容': fSec.value.trim()});
-        await reload('存好了');
+        await postJSON('/api/section', {kind:'稿件', id:D.id, '小节':'素材', '内容': next});
+        await reload('加进素材了');
+      }catch(e){ toast('没存上：' + e.message); add.disabled = false; }
+    };
+    add.addEventListener('click', fire);
+    $('#matUrl').addEventListener('keydown', e => {
+      if(e.key === 'Enter'){ e.preventDefault(); fire(); }
+    });
+  }
+
+  /* 讨论：拖文件进来 */
+  const zone = $('#dropZone');
+  const pick = $('#fileInput');
+  const send = async file => {
+    const b64 = await new Promise((ok, no) => {
+      const r = new FileReader();
+      r.onload = () => ok(r.result);
+      r.onerror = () => no(new Error('读不出来'));
+      r.readAsDataURL(file);
+    });
+    await postJSON('/api/asset', {稿件: D.id, 名字: file.name, 数据: b64});
+  };
+  if(pick){
+    pick.addEventListener('change', async () => {
+      const list = Array.from(pick.files || []);
+      for(const f of list){
+        try{ await send(f); }catch(e){ toast(f.name + ' 没传上：' + e.message); }
+      }
+      if(list.length) await reload('传了 ' + list.length + ' 个文件');
+    });
+  }
+  if(zone){
+    ['dragenter', 'dragover'].forEach(t => zone.addEventListener(t, e => {
+      e.preventDefault(); zone.classList.add('over');
+    }));
+    ['dragleave', 'drop'].forEach(t => zone.addEventListener(t, e => {
+      e.preventDefault(); zone.classList.remove('over');
+    }));
+    zone.addEventListener('drop', async e => {
+      const list = Array.from((e.dataTransfer || {}).files || []);
+      if(!list.length) return;
+      for(const f of list){
+        try{ await send(f); }catch(err){ toast(f.name + ' 没传上：' + err.message); }
+      }
+      await reload('传了 ' + list.length + ' 个文件');
+    });
+  }
+
+  /* 配图：三种互斥，选完就落盘 */
+  document.querySelectorAll('.dimg').forEach(b => {
+    b.addEventListener('click', async () => {
+      if(b.classList.contains('on')) return;
+      try{
+        await postJSON('/api/write', {kind:'稿件', id:D.id, '字段': {'配图形式': b.dataset.mode}});
+        await reload('配' + b.dataset.mode + '图');
       }catch(e){ toast('没存上：' + e.message); }
-      finally{ ev.target.disabled = false; }
+    });
+  });
+
+  /* 排版控件：改就生效，顺手存本地 */
+  const cfg = layoutCfg();
+  const paint = () => {
+    const p = $('#dPaper');
+    if(!p) return;
+    const th = THEMES[cfg.主题] || THEMES['纸白'];
+    p.style.setProperty('--fs', cfg.字号 + 'px');
+    p.style.setProperty('--lh', cfg.行距);
+    p.style.setProperty('--ls', cfg.字距 + 'px');
+    p.style.background = th.底;
+    p.style.color = th.字;
+    try{ localStorage.setItem('layout:' + DRAFT_ID, JSON.stringify(cfg)); }catch(e){}
+  };
+  const hook = (id, key, unit) => {
+    const el = $('#' + id);
+    if(!el) return;
+    el.addEventListener('input', () => {
+      cfg[key] = Number(el.value);
+      $('#' + id + 'v').textContent = el.value + (unit || '');
+      paint();
+    });
+  };
+  hook('cSize', '字号', 'px');
+  hook('cLine', '行距', '');
+  hook('cSpace', '字距', 'px');
+
+  document.querySelectorAll('[data-dev]').forEach(b => {
+    b.addEventListener('click', () => {
+      cfg.设备 = b.dataset.dev;
+      try{ localStorage.setItem('layout:' + DRAFT_ID, JSON.stringify(cfg)); }catch(e){}
+      renderPanel();
+    });
+  });
+  document.querySelectorAll('[data-theme]').forEach(b => {
+    b.addEventListener('click', () => {
+      cfg.主题 = b.dataset.theme;
+      document.querySelectorAll('[data-theme]').forEach(x => x.classList.toggle('on', x === b));
+      paint();
+      const note = document.querySelector('.dsec-t span');
+      if(note) note.textContent = cfg.设备 + ' · ' + cfg.主题;
+      try{ localStorage.setItem('layout:' + DRAFT_ID, JSON.stringify(cfg)); }catch(e){}
+    });
+  });
+
+  /* 复制排版：带样式复制，粘到公众号后台不掉格式 */
+  const copy = $('#copyRich');
+  if(copy){
+    copy.addEventListener('click', async () => {
+      const paper = $('#dPaper');
+      if(!paper) return;
+      const range = document.createRange();
+      range.selectNodeContents(paper);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      let ok = false;
+      try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
+      sel.removeAllRanges();
+      toast(ok ? '复制好了，去粘' : '复制失败，浏览器不让。手动选一遍再按 Ctrl+C');
     });
   }
 
