@@ -51,6 +51,7 @@
   </main>
 </div>
 <div class="toast" id="toast"></div>
+<div class="dmask" id="dmask"><div class="dmodal" id="dmodal"></div></div>
 
 <script src="assets/app.js"></script>
 <script>
@@ -109,7 +110,7 @@ function renderHead(){
   $('#dSub').innerHTML = bits.map(esc).join(' · ') +
     (D['待重做'].length ? ` · <b style="color:#D9474C">${esc(D['待重做'].join(' / '))} 待重做</b>` : '');
 
-  $('#dStage').innerHTML = stageBar(D, {});
+  $('#dStage').innerHTML = stageBar(D, {labels: true});
   bindStage($('#dStage'), D, jump);
 }
 
@@ -525,17 +526,48 @@ function replaceBodySection(text){
 }
 
 /* ---------- 跳阶段 ---------- */
+/* ---------- 退回确认 ---------- */
+/* 包一层 Promise，问完再决定走不走。原生 confirm 太丑，也说不清会丢什么 */
+function askBack(stage, down){
+  return new Promise(resolve => {
+    const mask = $('#dmask'), box = $('#dmodal');
+    const downTxt = down.length
+      ? `「${down.map(s => STAGE_LABEL[s]).join('」「')}」已经做过了，退回去以后要重做一遍，旧的会归档到 .历史/作废。`
+      : `后面几格还没做过什么，退回去不会丢东西。`;
+    box.innerHTML = `
+      <div class="dm-h">退回「${esc(STAGE_LABEL[stage])}」？</div>
+      <div class="dm-b">${esc(downTxt)}</div>
+      <div class="dm-n">正文不会动，只改阶段位置。</div>
+      <div class="dm-f">
+        <button class="btn" id="dmNo">先不退</button>
+        <button class="btn btn-primary" id="dmYes">确定退回</button>
+      </div>`;
+    mask.classList.add('on');
+
+    const done = ok => {
+      mask.classList.remove('on');
+      document.removeEventListener('keydown', key);
+      setTimeout(() => { box.innerHTML = ''; }, 200);
+      resolve(ok);
+    };
+    const key = e => { if(e.key === 'Escape') done(false); };
+
+    $('#dmNo').addEventListener('click', () => done(false));
+    $('#dmYes').addEventListener('click', () => done(true));
+    mask.addEventListener('click', e => { if(e.target === mask) done(false); });
+    document.addEventListener('keydown', key);
+    setTimeout(() => $('#dmYes').focus(), 60);
+  });
+}
+
 async function jump(stage){
   if(!D || stage === D['阶段']) return;
   const here = stageAt(D);
   const to = STAGES.indexOf(stage);
 
   if(to < here){
-    const after = STAGES.slice(to + 1).filter(s => (D['有产物'] || []).indexOf(s) >= 0);
-    const warn = after.length
-      ? `退回「${STAGE_LABEL[stage]}」。${after.map(s => STAGE_LABEL[s]).join('、')} 会标成待重做，回来时要重做一遍。`
-      : `退回「${STAGE_LABEL[stage]}」？`;
-    if(!confirm(warn)) return;
+    const down = STAGES.slice(to + 1).filter(s => (D['有产物'] || []).indexOf(s) >= 0);
+    if(!await askBack(stage, down)) return;
   }
 
   try{

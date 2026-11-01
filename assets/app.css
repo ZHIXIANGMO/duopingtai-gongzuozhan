@@ -374,6 +374,17 @@ table.tb tr:hover td{background:#FCFCFC}
 .stage .sg.redo i{background:transparent;height:6px;border:1px dashed var(--accent)}
 .stage .sg:hover i{height:8px}
 .stage .sn{font-size:10.5px;color:var(--mute);letter-spacing:.2px;font-variant-numeric:tabular-nums}
+/* 带名字的进度条：每格下面写出这一格叫什么，光一根条看不懂 */
+.stage.lbl .segs{gap:4px}
+.stage.lbl .sg{flex-direction:column;gap:7px;align-items:stretch;height:auto}
+.stage.lbl .sg .sgl{font-size:10px;font-weight:400;letter-spacing:.1px;color:#C0C0C0;
+  text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:color .16s}
+.stage.lbl .sg.done .sgl{color:#B9B9B9}
+.stage.lbl .sg:hover .sgl{color:#7E7E7E}
+.stage.lbl .sg.now .sgl{color:var(--accent);font-weight:600}
+.stage.lbl .sg.redo .sgl{color:var(--accent)}
+.stage.lbl .sn{margin-top:9px}
 .stage.sm .sg{height:12px}
 .stage.sm .sg i{height:3px}
 .stage.sm .sg.redo i{height:5px}
@@ -396,6 +407,20 @@ table.tb tr:hover td{background:#FCFCFC}
 .dstage .stage .sg i{height:5px}
 .dstage .stage .sg:hover i{height:9px}
 .dstage .stage .sn{font-size:11px}
+/* 退回确认弹窗 */
+.dmask{position:fixed;inset:0;background:rgba(22,22,22,.26);-webkit-backdrop-filter:blur(2px);
+  backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;
+  padding:24px;z-index:200;opacity:0;pointer-events:none;transition:opacity .18s}
+.dmask.on{opacity:1;pointer-events:auto}
+.dmodal{width:100%;max-width:356px;background:#fff;border-radius:18px;padding:22px 22px 17px;
+  box-shadow:0 24px 60px -18px rgba(0,0,0,.3);transform:translateY(10px) scale(.985);
+  transition:transform .22s cubic-bezier(.2,.8,.3,1)}
+.dmask.on .dmodal{transform:none}
+.dm-h{font-size:15px;font-weight:600;letter-spacing:-.2px;color:var(--ink)}
+.dm-b{font-size:12.5px;line-height:1.8;color:#5A5A5A;margin-top:9px}
+.dm-n{font-size:10.5px;color:#B5B5B5;margin-top:10px}
+.dm-f{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+
 .dsec{margin-top:20px}
 .dsec-t{font-size:9.5px;letter-spacing:1.2px;color:#C9C9C9;margin-bottom:8px;
   display:flex;align-items:center;gap:8px}
@@ -680,6 +705,9 @@ table.tb tr:hover td{background:#FCFCFC}
   /* 稿件窗口：上下排，进度条贴顶 */
   .main.draft{flex-direction:column;overflow:visible}
   .dfile{flex:none;border-right:0;border-bottom:1px solid var(--line);padding:16px 15px 22px}
+  .stage.lbl .sg .sgl{font-size:9px}
+  .stage.lbl .segs{gap:3px}
+  .stage.lbl .sn{font-size:10px}
   .cfx-wrap{grid-template-columns:1fr}
   /* 首页：两列并一列 */
   .hcols{flex-direction:column}

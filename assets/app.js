@@ -395,13 +395,18 @@ function stageBar(d, opts){
     if(redo.indexOf(s) >= 0) cls.push('redo');
     if(has.indexOf(s) >= 0) cls.push('has');
     const tip = STAGE_LABEL[s] + (redo.indexOf(s) >= 0 ? ' · 待重做' : '');
-    return `<button type="button" class="${cls.join(' ')}" data-s="${s}" title="${esc(tip)}" aria-label="${esc(tip)}"><i></i></button>`;
+    const name = opts.labels ? `<b class="sgl">${esc(STAGE_LABEL[s])}</b>` : '';
+    return `<button type="button" class="${cls.join(' ')}" data-s="${s}" title="${esc(tip)}" aria-label="${esc(tip)}"><i></i>${name}</button>`;
   }).join('');
 
-  const label = opts.label === false ? '' :
-    `<div class="sn">${esc(STAGE_LABEL[STAGES[here]] || '')} · ${here + 1}/${STAGES.length}${redo.length ? ' · 待重做 ' + redo.length : ''}</div>`;
+  let label = '';
+  if(opts.label !== false){
+    label = opts.labels
+      ? `<div class="sn">第 ${here + 1} 格 / 共 ${STAGES.length} 格 · 点任意一格切过去${redo.length ? ' · <b>待重做 ' + redo.length + '</b>' : ''}</div>`
+      : `<div class="sn">${esc(STAGE_LABEL[STAGES[here]] || '')} · ${here + 1}/${STAGES.length}${redo.length ? ' · 待重做 ' + redo.length : ''}</div>`;
+  }
 
-  return `<div class="stage ${opts.cls || ''}" data-id="${esc(d.id || '')}">
+  return `<div class="stage ${opts.labels ? 'lbl' : ''} ${opts.cls || ''}" data-id="${esc(d.id || '')}">
     <div class="segs">${segs}</div>
     ${label}
   </div>`;
