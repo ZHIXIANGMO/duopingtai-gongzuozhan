@@ -122,27 +122,19 @@ function sec(title, html, note){
   </div>`;
 }
 
-function conflictMini(){
-  if(!TOPIC) return '';
-  const rows = CONFLICT_FIELDS.map(f => {
-    const v = TOPIC[f];
-    const miss = isBlank(v);
-    return `<div class="cfx ${miss ? 'miss' : ''}">
-      <span class="cfx-k">${esc(f)}</span>
-      <span class="cfx-v">${miss ? '还没填' : esc(v)}</span>
-    </div>`;
-  }).join('');
-  return `<div class="cfx-wrap">${rows}</div>`;
+/* 讨论阶段：左边就是正文本身。素材、冲突这些 AI 自己会读，不摆给人看 */
+function panelDiscuss(){
+  const body = bodyText();
+  return `
+    ${sec('正文', `<textarea class="dedit" id="fBody" rows="18"
+        placeholder="右边聊，聊出来的东西会落在这里。想自己先写两句也行。">${esc(body)}</textarea>
+      <div class="drow"><button class="btn btn-sm" id="saveBody">保存正文</button></div>`,
+      body ? countWords(body) + ' 字' : '还没初稿')}
+    <div class="dtip">AI 写的东西不会自己进来。它给完，你点「应用」才落盘。</div>`;
 }
 
-function panelDiscuss(){
-  const detail = TOPIC ? sectionOf(TOPIC['正文'], '必须写进去的细节') : '';
-  return `
-    ${TOPIC ? sec('冲突四格', conflictMini(), '填不全，写出来是空的') : ''}
-    ${detail ? sec('必须写进去的细节', `<div class="dbox">${renderMd(detail)}</div>`) :
-      sec('必须写进去的细节', '<div class="dbox muted">还空着。这段是 AI 唯一能用的真实素材，不给它，它只会编。</div>')}
-    ${sec('现在的正文', `<div class="dbox">${bodyText() ? renderMd(bodyText()) : '<span style="color:#B5B5B5">还没有初稿</span>'}</div>`)}
-    <div class="dtip">这一阶段就是聊。右边把想法说完，让 AI 写初稿，出来再往下推。</div>`;
+function countWords(s){
+  return String(s || '').replace(/\s/g, '').length;
 }
 
 /* 从一段正文里取某个 ## 小节 */

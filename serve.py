@@ -899,7 +899,8 @@ def build_state(ident_id=""):
     for d in state["稿件"]:
         t = topic_map.get(d.get("选题"), {})
         d["选题标题"] = (t.get("标题候选") or "").split("|")[0].strip() or d.get("选题", "")
-        d["字数"] = len(re.sub(r"\s", "", (d.get("正文") or ""))) or 0
+        # 字数只算「## 正文」这一节，别把小节标题和配图排版也算成文章字数
+        d["字数"] = len(re.sub(r"\s", "", sections_of(d.get("正文") or "").get("正文") or ""))
         # 五阶段：前端靠这几个字段画进度条，不用自己算
         here = stage_of(d)
         d["阶段"] = here
