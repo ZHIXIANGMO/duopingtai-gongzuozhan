@@ -166,6 +166,8 @@ function renderSide(state, active){
         '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg>', null)}
       ${item('data', 'data.html', '数据',
         '<svg viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-6"/></svg>', pubs)}
+      ${item('persona', 'persona.html', '人设',
+        '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>', null)}
     </div>
     <div class="side-foot">
       <div class="deck" id="deck">
@@ -211,7 +213,7 @@ function deckInfoHTML(p, on, color){
     </div>
     <div class="di-sec">要发的平台</div>
     ${plats}
-    <div class="di-foot">${on ? '整个工作台现在看的就是它' : '点一下，切过去'}</div>`;
+    <a class="di-foot di-go" href="persona.html?id=${encodeURIComponent(p.id)}">看它的人设 →</a>`;
 }
 
 let deckTimer = null;
@@ -251,19 +253,27 @@ function bindDeck(S){
 
     el.addEventListener('click', () => {
       const id = el.dataset.id;
-      if(!id || id === curId) return;
+      if(!id) return;
+      // 点已经选中的那张 → 看它的人设；点别的 → 切过去
+      if(id === curId){
+        location.href = 'persona.html?id=' + encodeURIComponent(id);
+        return;
+      }
       setIdent(id);
       try{ sessionStorage.setItem('meOpen', '1'); }catch(err){}
       location.reload();
     });
   });
 
-  // 窄屏没有悬停：点名片把它当抽屉拉开
+  // 窄屏没有悬停：点名片把它当抽屉拉开。宽屏点名片 → 进这个 IP 的人设页
   const card = $('#meCard');
   if(card){
     card.addEventListener('click', e => {
       e.stopPropagation();
-      if(window.innerWidth > 820) return;
+      if(window.innerWidth > 820){
+        location.href = 'persona.html';
+        return;
+      }
       deck.classList.toggle('open');
     });
   }

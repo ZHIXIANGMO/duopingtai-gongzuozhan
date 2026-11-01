@@ -42,13 +42,20 @@ WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"]
 
 # 每个实体写回时的字段顺序，避免 diff 乱序
 ORDER = {
-    "身份": ["id", "名称", "定位", "读者", "语言风格", "偏爱话题", "禁区", "锚点习惯", "创建"],
+    "身份": ["id", "名称", "头像", "一句话", "年龄", "生日",
+           "定位", "领域", "读者", "语气", "创建"],
     "账号": ["id", "身份", "平台", "账号名", "粉丝基线", "状态", "书签适配器", "创建"],
     "灵感": ["id", "来源", "原话", "捕获", "关联身份", "状态"],
     "选题": ["id", "来自灵感", "标题候选", "正方", "反方", "我站", "我可能错在哪",
            "目标身份", "目标平台", "优先级", "状态", "创建"],
     "稿件": ["id", "选题", "身份", "版本", "状态", "字数", "创建", "更新"],
 }
+
+# 人设正文的小节，顺序固定。前端按这个渲染，写回时按这个重排。
+PERSONA_SECTIONS = ["这个人是谁", "要传递什么", "说话方式", "模仿样例",
+                    "写作习惯", "视觉与设计风格", "平台差异", "别做的事"]
+# 人设的短字段，全部要填齐才算立住了
+PERSONA_FIELDS = ["一句话", "年龄", "生日", "定位", "领域", "读者", "语气"]
 
 PUB_FIELDS = ["id", "发布日", "标题", "稿件", "账号", "适配说明", "链接",
               "阅读", "点赞", "收藏", "评论", "涨粉", "更新于", "推广动作", "推广结果"]
@@ -453,6 +460,48 @@ def belongs(raw, cur):
     return cur in id_list(raw)
 
 
+def build_persona_view(pid=""):
+    """人设页专用：只给一个身份，附上它的小节顺序、账号和完整度。"""
+    idents = list_entity("身份")
+    item = None
+    for p in idents:
+        if p["id"] == pid:
+            item = p
+            break
+    if item is None and idents:
+        item = idents[0]
+
+    accs = [a for a in list_entity("账号") if a.get("身份") == (item or {}).get("id")]
+    pubs = read_pubs()
+    pub_by_acc = {}
+    for row in pubs:
+        pub_by_acc[row.get("账号") or ""] = pub_by_acc.get(row.get("账号") or "", 0) + 1
+    for a in accs:
+        a["投放数"] = pub_by_acc.get(a["id"], 0)
+
+    sec = split_sections((item or {}).get("正文") or "")
+
+    def filled(key):
+        text = (sec.get(key) or "").strip()
+        return bool(text) and not text.startswith("（待补")
+
+    # 短字段 + 小节一起算完整度，空着的直接告诉页面标出来
+    blanks = [k for k in PERSONA_FIELDS if not str((item or {}).get(k) or "").strip()]
+    blanks += [k for k in PERSONA_SECTIONS if not filled(k)]
+
+    total = len(PERSONA_FIELDS) + len(PERSONA_SECTIONS)
+    return {
+        "人设": item or {},
+        "小节": PERSONA_SECTIONS,
+        "小节内容": sec,
+        "账号": accs,
+        "身份清单": [{"id": p["id"], "名称": p.get("名称", ""), "头像": p.get("头像", "")}
+                 for p in idents],
+        "缺什么": blanks,
+        "完整度": int(round((total - len(blanks)) * 100.0 / total)),
+    }
+
+
 def build_state(ident_id=""):
     state = {}
     for kind in ("身份", "账号", "灵感", "选题", "稿件"):
@@ -552,7 +601,12 @@ def build_state(ident_id=""):
 
 # ---------------------------------------------------------------- AI
 
-BASE_RULES = """你在帮「{name}」做自媒体内容。他一个人管多个平台账号，你只服务他一个人。
+BASE_RULES = """你在给「{name}」当执笔人。他一个人管多个平台账号，网上发出去的每个字都由你替他落笔。
+
+你的位置，别搞混：
+- 跟他本人说话时，你是助手。直接、简短、说事。
+- 一旦开始写要发出去的东西（标题、开头、正文、回复评论），你就换成「{name}」本人。
+  不是模仿他的语气，是就是。用他的词、他的判断、他的经历。
 
 硬规则，违反任何一条这次回答就作废：
 
@@ -564,7 +618,7 @@ BASE_RULES = """你在帮「{name}」做自媒体内容。他一个人管多个�
 ```json
 {{"写入":[{{"kind":"选题","id":"tp-001","字段":{{"反方":"改后的内容"}}}}]}}
 ```
-只能改「灵感/选题/稿件」三类，字段名必须是文件里已有的。正文用 "正文" 这个键。
+只能改「灵感/选题/稿件/身份」四类，字段名必须是文件里已有的。正文用 "正文" 这个键。
 没有要改的就不要输出这段 json。
 
 他的人设：
@@ -611,17 +665,84 @@ TASK_PROMPT = {
 }
 
 
+def split_sections(body):
+    """把正文按 `## 小节名` 切开。开头的无标题部分丢掉（都是空行）。"""
+    out, cur, buf = {}, "", []
+    for line in (body or "").splitlines():
+        if line.startswith("## "):
+            if cur:
+                out[cur] = "\n".join(buf).strip()
+            cur = line[3:].strip()
+            buf = []
+        else:
+            buf.append(line)
+    if cur:
+        out[cur] = "\n".join(buf).strip()
+    return out
+
+
+def build_persona(ident):
+    """把人设文件拼成模型能读懂的一段。空着的地方明确标出来，别让 AI 自己补。"""
+    if not ident:
+        return "（还没写人设）"
+
+    sec = split_sections(ident.get("正文") or "")
+
+    def got(key):
+        """小节有内容、且不是「待补」占位。"""
+        text = (sec.get(key) or "").strip()
+        if not text or text.startswith("（待补"):
+            return ""
+        return text
+
+    name = ident.get("名称") or "他"
+    L = ["【你是谁】"]
+    L.append("名字：%s%s" % (name, (" " + ident["头像"]) if ident.get("头像") else ""))
+    if ident.get("一句话"):
+        L.append("一句话：%s" % ident["一句话"])
+    for key in ("年龄", "生日"):
+        if ident.get(key):
+            L.append("%s：%s" % (key, ident[key]))
+    if got("这个人是谁"):
+        L.append(got("这个人是谁"))
+
+    if ident.get("定位") or ident.get("领域") or ident.get("读者") or got("要传递什么"):
+        L.append("\n【账号定位】")
+        if ident.get("定位"):
+            L.append("- 定位：%s" % ident["定位"])
+        if ident.get("领域"):
+            L.append("- 领域：%s" % ident["领域"])
+        if ident.get("读者"):
+            L.append("- 写给谁：%s" % ident["读者"])
+        if got("要传递什么"):
+            L.append("- 想让读者记住的一件事：%s" % got("要传递什么"))
+
+    if ident.get("语气") or got("说话方式"):
+        L.append("\n【你怎么说话】")
+        if ident.get("语气"):
+            L.append("语气：%s" % ident["语气"])
+        if got("说话方式"):
+            L.append(got("说话方式"))
+
+    for key, label in (("模仿样例", "他写过的样子，照着这个口气"),
+                       ("写作习惯", "你怎么写"),
+                       ("视觉与设计风格", "你的视觉调性"),
+                       ("平台差异", "平台差异"),
+                       ("别做的事", "你绝不做的")):
+        if got(key):
+            L.append("\n【%s】\n%s" % (label, got(key)))
+
+    missing = [k for k in PERSONA_SECTIONS if not got(k)]
+    if missing:
+        L.append("\n【还没填的】%s。写到这些地方先问他，不许自己补。" % "、".join(missing))
+
+    return "\n".join(L)
+
+
 def build_messages(state, kind, item_id, history):
     ident = state["当前身份"] or {}
-    persona_parts = []
-    if ident:
-        for key in ("名称", "定位", "读者", "语言风格", "偏爱话题", "禁区", "锚点习惯"):
-            if ident.get(key):
-                persona_parts.append("- %s：%s" % (key, ident[key]))
-        if ident.get("正文"):
-            persona_parts.append("\n" + ident["正文"])
     system = BASE_RULES.format(name=ident.get("名称", "他"),
-                               persona=("\n".join(persona_parts) or "（还没写人设）"))
+                               persona=build_persona(ident))
 
     topic_map = dict((t["id"], t) for t in state["选题"])
 
@@ -790,6 +911,9 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/state":
                 who = (q.get("ident") or q.get("身份") or [""])[0]
                 return self._json({"ok": True, **build_state(who)})
+            if path == "/api/persona":
+                pid = (q.get("id") or [""])[0]
+                return self._json({"ok": True, **build_persona_view(pid)})
             if path in ("/", "/index.html"):
                 return self._serve("index.html")
         except Exception as exc:

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IP 人设 · 内容矩阵</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  /* ---------- 顶部身份条 ---------- */
+  .ps-hero{display:flex;align-items:flex-start;gap:18px;padding:4px 0 22px}
+  .ps-av{width:76px;height:76px;border-radius:24px;flex:none;display:grid;place-items:center;
+    font-size:34px;line-height:1;background:linear-gradient(135deg,#FFE3DC,#FFD1D3);
+    box-shadow:inset 0 0 0 1px rgba(255,90,95,.12)}
+  .ps-id{flex:1;min-width:0;padding-top:2px}
+  .ps-name{font-size:23px;font-weight:600;letter-spacing:-.2px;display:flex;align-items:center;gap:9px}
+  .ps-line{font-size:12.5px;color:#6E6E6E;margin-top:5px;line-height:1.6}
+  .ps-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .ps-tag{font-size:10.5px;padding:3px 9px;border-radius:8px;background:var(--accent-soft);
+    color:#D9393F;line-height:1.5}
+  .ps-tag.gray{background:#F2F2F2;color:#8C8C8C}
+  .ps-side{flex:none;display:flex;align-items:center;gap:14px;padding-top:6px}
+
+  .ps-meter{width:118px}
+  .ps-meter-bar{height:5px;border-radius:3px;background:#EFEFEF;overflow:hidden}
+  .ps-meter-bar i{display:block;height:100%;border-radius:3px;background:var(--accent);
+    transition:width .5s ease}
+  .ps-meter-t{font-size:10px;color:var(--mute);margin-top:6px;text-align:right;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ps-meter-t b{color:var(--ink);font-weight:600;font-size:11px}
+
+  .btn{border:0;border-radius:11px;padding:8px 15px;font-size:11.5px;cursor:pointer;
+    transition:.16s;background:#F2F2F2;color:var(--ink)}
+  .btn:hover{background:#E9E9E9}
+  .btn.pri{background:var(--ink);color:#fff}
+  .btn.pri:hover{background:#000}
+  .btn[disabled]{opacity:.4;cursor:default}
+
+  /* ---------- 区块 ---------- */
+  .ps-card{padding:8px 18px 14px;display:grid;grid-template-columns:repeat(12,1fr);
+    column-gap:22px;row-gap:0;border-color:var(--line2)}
+  .ps-row{grid-column:span 12;display:flex;gap:14px;padding:9px 0;align-items:flex-start}
+  .ps-row.s{grid-column:span 3}
+  .ps-row.m{grid-column:span 6}
+  .ps-lab{width:84px;flex:none;font-size:11px;color:#8E8E8E;line-height:1.75;padding-top:1px}
+  .ps-lab i{display:block;font-style:normal;font-size:9.5px;color:#C4C4C4;margin-top:1px}
+  .ps-val{flex:1;min-width:0;font-size:12.5px;line-height:1.85;color:var(--ink2)}
+  .ps-val.empty{color:#CFCFCF;font-size:11.5px}
+  .ps-row.block{flex-direction:column;gap:7px;padding:13px 0;border-top:1px solid var(--line)}
+  .ps-row.block:first-child{border-top:0}
+  .ps-row.block .ps-lab{width:auto;padding-top:0}
+
+  .ps-card.key{border-color:#FBDDDE;background:linear-gradient(180deg,#FFFDFD,#fff)}
+  .ps-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);
+    margin-right:7px;vertical-align:3px}
+
+  /* 空着的小节用一块淡虚线占位，一眼看出这里缺东西 */
+  .ps-void{border:1px dashed #E4E4E4;border-radius:11px;padding:11px 13px;
+    font-size:11px;color:#C3C3C3;line-height:1.8;background:#FCFCFC}
+
+  .ps-text p{margin-bottom:9px}
+  .ps-text p:last-child{margin-bottom:0}
+  .ps-text ul{padding-left:15px;margin-bottom:9px}
+  .ps-text li{margin-bottom:3px}
+  .ps-text b{font-weight:600;color:var(--ink)}
+  .ps-code{background:#F8F8F8;border-left:2px solid #E4E4E4;border-radius:0 8px 8px 0;
+    padding:9px 12px;font-size:11.5px;line-height:1.8;white-space:pre-wrap;
+    font-family:inherit;color:#5A5A5A;margin-bottom:9px}
+  .ps-empty{color:#CFCFCF;font-size:11.5px;line-height:1.8}
+
+  /* ---------- 编辑态 ---------- */
+  .ps-in,.ps-ta{width:100%;border:1px solid var(--line2);border-radius:10px;
+    padding:8px 11px;font-size:12.5px;color:var(--ink);background:#fff;
+    transition:.14s;line-height:1.8;resize:vertical;outline:none}
+  .ps-in:focus,.ps-ta:focus{border-color:#BFBFBF;background:#FDFDFD}
+  .ps-in::placeholder,.ps-ta::placeholder{color:#C9C9C9}
+  .ps-in{height:36px}
+  .ps-ta{min-height:72px;font-family:inherit;resize:vertical;line-height:1.8}
+  .ps-ta.tall{min-height:112px}
+  .ps-hint{font-size:9.5px;color:#C0C0C0;margin-top:5px;line-height:1.7}
+
+  /* 编辑时底部固定条 */
+  .ps-bar{position:sticky;bottom:0;margin-top:18px;padding:13px 0 3px;background:#fff;
+    display:flex;align-items:center;gap:10px;border-top:1px solid var(--line)}
+  .ps-bar .who{font-size:11px;color:var(--mute);margin-right:auto}
+
+  /* ---------- 底部的号 ---------- */
+  .ps-accs{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .ps-acc{border:1px solid var(--line2);border-radius:var(--r-sm);padding:14px;
+    display:flex;align-items:center;gap:9px;transition:.16s;background:#fff}
+  .ps-acc:hover{background:#FAFAFA;border-color:#DCDCDC}
+  .ps-acc b{font-size:12.5px;font-weight:600;display:block;margin-bottom:3px}
+  .ps-acc span{font-size:10px;color:var(--mute)}
+
+  /* 人设页比别的页更紧凑一点，别让人滚太久 */
+  .main .sec-head{margin:20px 0 10px}
+
+  @media (max-width:820px){
+    .ps-hero{flex-wrap:wrap;gap:13px}
+    .ps-av{width:60px;height:60px;border-radius:19px;font-size:26px}
+    .ps-name{font-size:19px}
+    .ps-side{width:100%;flex-direction:row;justify-content:space-between;align-items:center}
+    .ps-row,.ps-row.s,.ps-row.m{grid-column:span 12;flex-direction:column;gap:6px}
+    .ps-lab{width:auto}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb">IP 人设 · <b id="topName"></b></div>
+      <div class="top-right">
+        <div class="sync"><span id="syncDot" class="dot"></span><span id="syncText"></span></div>
+      </div>
+    </div>
+
+    <div id="hero"></div>
+    <div id="body"></div>
+    <div id="foot"></div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="assets/app.js"></script>
+<script>
+let V = null;          // /api/persona 返回
+let EDIT = false;
+
+/* 页面结构。短字段用 f，正文小节用 s。 */
+const BLOCKS = [
+  {
+    标题: '基础信息',
+    说明: '名片、封面、AI 称呼你的方式，都从这儿来',
+    项: [
+      {f:'头像', 标签:'头像', 占:'s', 提示:'一个 emoji，比如 🍊。也可以只写一个字'},
+      {f:'名称', 标签:'名字', 占:'s', 提示:'别人在评论区看到的那个名字'},
+      {f:'一句话', 标签:'一句话', 占:'m', 提示:'20 字内。别人一眼知道你是谁'},
+      {f:'年龄', 标签:'年龄', 占:'s', 提示:'可以不填'},
+      {f:'生日', 标签:'生日', 占:'s', 提示:'YYYY-MM-DD，可以不填'}
+    ]
+  },
+  {
+    标题: '账号定位',
+    重点: true,
+    说明: '这一段决定 AI 会不会写跑偏。空着，它就只能靠自己猜',
+    项: [
+      {f:'定位', 标签:'这个号是谁', 占:'m', 提示:'一句话。例如「AI × 个人知识管理」'},
+      {f:'领域', 标签:'涉及哪些领域', 占:'m', 提示:'逗号分隔，三到五个就够'},
+      {f:'读者', 标签:'写给谁', 占:'l', 提示:'越具体越好。别写「所有人」'},
+      {s:'这个人是谁', 标签:'自述', 提示:'第一人称写：你在哪、平时干什么、为什么开这个号。不要写「热爱分享」这种谁都能说的话'},
+      {s:'要传递什么', 标签:'想传递什么', 提示:'如果读者只记住一件事，是什么？要写成能被反驳的判断，不是「知识改变命运」这种空话'}
+    ]
+  },
+  {
+    标题: '说话方式',
+    说明: 'AI 写完一段会拿这里自查。写得越具体，它越像你',
+    项: [
+      {f:'语气', 标签:'语气', 占:'m', 提示:'三到五个词，例如「克制、平实、短句」'},
+      {s:'说话方式', 标签:'具体怎么说', 提示:'爱用什么句式、习惯用什么类比、避开哪些词'},
+      {s:'模仿样例', 标签:'照着这个口气', 提示:'正面贴一段你自己觉得最像你的文字；反面贴一段你不想要的腔调'}
+    ]
+  },
+  {
+    标题: '写作习惯',
+    说明: '结构上的偏好：锚句、比喻、开头、段落长度',
+    项: [{s:'写作习惯', 标签:'你的写法'}]
+  },
+  {
+    标题: '视觉与设计风格',
+    说明: '现在只影响你自己排版，以后会喂给 AI 做封面和配图',
+    项: [{s:'视觉与设计风格', 标签:'视觉调性',
+          提示:'配图用截图还是插画、色调偏冷还是偏暖、版面偏密还是偏疏、有没有固定的字体和封面模板'}]
+  },
+  {
+    标题: '平台差异',
+    说明: '同一个想法，在小红书和公众号不是同一篇',
+    项: [{s:'平台差异', 标签:'各平台怎么调'}]
+  },
+  {
+    标题: '别做的事',
+    说明: '这一条最容易见效。写下来，AI 就不敢碰',
+    项: [{s:'别做的事', 标签:'禁区'}]
+  }
+];
+
+/* ---------------- 文本渲染：够用的迷你 markdown ---------------- */
+function mdLite(t){
+  const lines = String(t || '').split('\n');
+  const out = [];
+  let i = 0;
+  const inl = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  const isLi = l => /^\s*-\s+/.test(l);
+  const isFence = l => l.trim().startsWith('```');
+
+  while(i < lines.length){
+    const line = lines[i];
+    if(!line.trim()){ i++; continue; }
+
+    if(isFence(line)){
+      i++;
+      const buf = [];
+      while(i < lines.length && !isFence(lines[i])){ buf.push(lines[i]); i++; }
+      i++;
+      const body = buf.join('\n').trim();
+      if(body) out.push('<pre class="ps-code">' + esc(body) + '</pre>');
+      continue;
+    }
+
+    if(isLi(line)){
+      const buf = [];
+      while(i < lines.length && isLi(lines[i])){
+        buf.push(lines[i].replace(/^\s*-\s+/, '')); i++;
+      }
+      out.push('<ul>' + buf.map(x => '<li>' + inl(x) + '</li>').join('') + '</ul>');
+      continue;
+    }
+
+    const buf = [];
+    while(i < lines.length && lines[i].trim() && !isFence(lines[i]) && !isLi(lines[i])){
+      buf.push(lines[i]); i++;
+    }
+    out.push('<p>' + inl(buf.join('\n')) + '</p>');
+  }
+  return out.join('');
+}
+
+/* ---------------- 渲染 ---------------- */
+function identId(){ return (V && V['人设'] && V['人设'].id) || ''; }
+function isCurrent(){ return localStorage.getItem('当前身份') === identId(); }
+
+function renderHero(){
+  const p = V['人设'] || {};
+  const name = p['名称'] || '未命名';
+  const av = p['头像'] || name.slice(0, 1);
+  const one = p['一句话'] || '';
+  const pos = p['定位'] || '';
+  const pct = V['完整度'] || 0;
+
+  $('#topName').textContent = name;
+
+  $('#hero').innerHTML = `
+    <div class="ps-hero">
+      <div class="ps-av">${esc(av)}</div>
+      <div class="ps-id">
+        <div class="ps-name">${esc(name)}
+          ${isCurrent() ? '<span class="ps-tag gray" style="font-weight:400">当前身份</span>' : ''}
+        </div>
+        <div class="ps-line">${one ? esc(one) : '<span style="color:#CFCFCF">还没写一句话</span>'}</div>
+        <div class="ps-tags">
+          ${pos ? `<span class="ps-tag">${esc(pos)}</span>` : ''}
+          ${(V['账号'] || []).map(a =>
+            `<span class="ps-tag gray">${esc(a['平台'])} · ${esc(a['账号名'])}</span>`).join('')}
+        </div>
+      </div>
+      <div class="ps-side">
+        <div class="ps-meter">
+          <div class="ps-meter-bar"><i style="width:${pct}%"></i></div>
+          <div class="ps-meter-t">人设完整度 <b>${pct}%</b></div>
+        </div>
+        ${EDIT
+          ? '<button class="btn" id="btnCancel">取消</button>'
+          : `<button class="btn pri" id="btnEdit">编辑</button>`}
+        ${!isCurrent() && !EDIT ? '<button class="btn" id="btnSet">设为当前</button>' : ''}
+      </div>
+    </div>`;
+
+  const be = $('#btnEdit');
+  if(be) be.addEventListener('click', () => {
+    EDIT = true;
+    render();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  });
+
+  const bc = $('#btnCancel');
+  if(bc) bc.addEventListener('click', () => {
+    if(!confirm('放弃这次修改？')) return;
+    EDIT = false;
+    render();
+  });
+
+  const bs = $('#btnSet');
+  if(bs) bs.addEventListener('click', () => {
+    localStorage.setItem('当前身份', identId());
+    toast('已切成「' + name + '」');
+    setTimeout(() => location.reload(), 500);
+  });
+}
+
+function shortVal(key){ return (V['人设'] || {})[key] || ''; }
+function secVal(key){ return (V['小节内容'] || {})[key] || ''; }
+
+function renderItem(it, blockIdx, itemIdx){
+  const span = it.f ? (it.占 || 'm') : 'block';
+
+  /* 短字段 */
+  if(it.f){
+    const val = shortVal(it.f);
+    if(EDIT){
+      const ph = it.提示 ? esc(it.提示) : '';
+      return `<div class="ps-row ${span === 'block' ? '' : span}">
+        <div class="ps-lab">${esc(it.标签)}</div>
+        <div class="ps-val">
+          <input class="ps-in" data-f="${esc(it.f)}" value="${esc(val)}" placeholder="${ph}">
+        </div>
+      </div>`;
+    }
+    return `<div class="ps-row ${span === 'block' ? '' : span}">
+      <div class="ps-lab">${esc(it.标签)}</div>
+      <div class="ps-val ${val ? '' : 'empty'}">${val ? esc(val) : '还没填'}</div>
+    </div>`;
+  }
+
+  /* 正文小节 */
+  const val = secVal(it.s);
+  const blank = !val.trim();
+
+  if(EDIT){
+    return `<div class="ps-row block">
+      <div class="ps-lab">${esc(it.标签)}${blank ? ' <i>空着</i>' : ''}</div>
+      <div style="width:100%">
+        <textarea class="ps-ta ${it.s === '这个人是谁' || it.s === '要传递什么' ? 'tall' : ''}"
+          data-s="${esc(it.s)}" placeholder="${esc(it.提示 || '')}">${esc(val)}</textarea>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="ps-row block">
+    <div class="ps-lab">${esc(it.标签)}</div>
+    <div class="ps-val ps-text">
+      ${blank
+        ? `<div class="ps-void">${esc(it.提示 || '还没填')}</div>`
+        : mdLite(val)}
+    </div>
+  </div>`;
+}
+
+function renderBody(){
+  const html = BLOCKS.map((b, bi) => {
+    const missing = b.项.filter(it =>
+      it.f ? !shortVal(it.f) : !secVal(it.s).trim()).length;
+
+    return `
+      <div class="sec-head"><h2>${b.重点 ? '<i class="ps-dot"></i>' : ''}${esc(b.标题)}</h2>
+        <span>${EDIT ? esc(b.说明 || '') : (missing ? missing + ' 处还没填' : '已填齐')}</span>
+      </div>
+      <div class="card ps-card${b.重点 ? ' key' : ''}">
+        ${b.项.map((it, ii) => renderItem(it, bi, ii)).join('')}
+      </div>`;
+  }).join('');
+
+  $('#body').innerHTML = html;
+}
+
+function renderFoot(){
+  const accs = V['账号'] || [];
+
+  const list = accs.length
+    ? `<div class="ps-accs">${accs.map(a => `
+        <a class="ps-acc" href="data.html?acc=${encodeURIComponent(a.id)}">
+          <div style="flex:1;min-width:0">
+            <b>${esc(a['账号名'] || a.id)}</b>
+            <span>${esc(a['平台'])} · ${a['投放数'] || 0} 条投放</span>
+          </div>
+        </a>`).join('')}</div>`
+    : `<div class="ps-empty">这个 IP 还没开号。去矩阵页看看。</div>`;
+
+  const bar = EDIT ? `
+    <div class="ps-bar">
+      <div class="who">改完点保存。没填的格子留着不影响，AI 会当成「不知道」来问你</div>
+      <button class="btn" id="btnCancel2">取消</button>
+      <button class="btn pri" id="btnSave">保存</button>
+    </div>` : '';
+
+  $('#foot').innerHTML = `
+    ${bar}
+    <div class="sec-head"><h2>这个 IP 名下的号</h2><span>${accs.length} 个</span></div>
+    ${list}`;
+
+  const bs = $('#btnSave');
+  if(bs) bs.addEventListener('click', save);
+
+  const bc2 = $('#btnCancel2');
+  if(bc2) bc2.addEventListener('click', () => {
+    if(!confirm('放弃这次修改？')) return;
+    EDIT = false;
+    render();
+  });
+}
+
+/* ---------------- 保存 ---------------- */
+async function save(){
+  const 字段 = {};
+  document.querySelectorAll('[data-f]').forEach(el => 字段[el.dataset.f] = el.value.trim());
+
+  const 正文 = (V['小节'] || []).map(name => {
+    const box = document.querySelector('[data-s="' + name + '"]');
+    const val = box ? box.value.trim() : (V['小节内容'][name] || '').trim();
+    return val ? '## ' + name + '\n\n' + val : '## ' + name;
+  }).join('\n\n') + '\n';
+
+  const btn = $('#btnSave');
+  btn.disabled = true;
+  btn.textContent = '保存中…';
+
+  try{
+    const r = await postJSON('/api/write', {
+      kind: '身份', id: identId(), 字段: 字段, 正文: 正文
+    });
+    if(!r.ok) throw new Error(r.error || '保存失败');
+
+    // 保存后重新拉一遍，拿到最新完整度
+    V = await getJSON('/api/persona?id=' + encodeURIComponent(identId()));
+    EDIT = false;
+    render();
+    toast('已保存');
+    setTimeout(() => location.reload(), 600);
+  }catch(e){
+    toast('保存失败：' + e.message);
+    btn.disabled = false;
+    btn.textContent = '保存';
+  }
+}
+
+function render(){
+  renderHero();
+  renderBody();
+  renderFoot();
+}
+
+(async function init(){
+  const qid = new URLSearchParams(location.search).get('id') || '';
+  const who = localStorage.getItem('当前身份') || '';
+
+  await boot('persona');
+
+  try{
+    const url = '/api/persona' + (qid ? '?id=' + encodeURIComponent(qid) : (who ? '?id=' + encodeURIComponent(who) : ''));
+    V = await getJSON(url);
+  }catch(e){
+    $('#body').innerHTML = '<div class="card" style="padding:20px;color:#B5B5B5">' +
+      '读不到人设：' + esc(e.message) + '</div>';
+    return;
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
