@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>选题 · 内容矩阵</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .pane .cf{grid-template-columns:1fr}
+  .pane-h{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+  .pane-h h2{font-size:15px;font-weight:600;line-height:1.5;flex:1;min-width:0}
+  .pane-sub{font-size:10.5px;color:var(--mute);margin-top:5px;line-height:1.7}
+  .kv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+  .kv span{font-size:10px;color:#9A9A9A;background:#F7F7F7;border-radius:7px;padding:4px 8px}
+  .kv b{color:#141414;font-weight:600}
+  .sec-t{font-size:9.5px;letter-spacing:1.2px;color:#C2C2C2;margin:16px 0 8px}
+  .drafts{display:flex;flex-direction:column;gap:7px}
+  .dr-row{display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--line);
+    border-radius:11px;font-size:11.5px;transition:.16s}
+  .dr-row:hover{border-color:#E3E3E3;background:#FCFCFC}
+  .dr-row .g{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dr-row .m{font-size:9.5px;color:#B5B5B5;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb">选题 · <b id="topCount"></b></div>
+      <div class="top-right">
+        <div class="sync"><span id="syncDot" class="dot"></span><span id="syncText"></span></div>
+      </div>
+    </div>
+
+    <div class="detail">
+      <div>
+        <div class="sec-head" style="margin-top:0">
+          <h2>选题库</h2>
+          <span>冲突填不满的排在最前</span>
+        </div>
+        <div class="topic-list" id="list"></div>
+      </div>
+
+      <div class="pane" id="pane"></div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="assets/app.js"></script>
+<script>
+let STATE = null;
+let PICK = null;
+
+function sortTopics(list){
+  return list.slice().sort((a, b) => {
+    const am = (a['缺冲突'] || []).length, bm = (b['缺冲突'] || []).length;
+    if(am !== bm) return bm - am;
+    const pr = {'P0':0, 'P1':1, 'P2':2};
+    return (pr[a['优先级']] ?? 9) - (pr[b['优先级']] ?? 9);
+  });
+}
+
+function renderList(){
+  const host = $('#list');
+  const list = sortTopics(STATE['选题'] || []);
+  $('#topCount').textContent = list.length + ' 条';
+
+  if(!list.length){
+    host.innerHTML = '<div class="blank">还没有选题。<br>在 <b>数据/选题/</b> 里新建一个 md，或者去工作台把一条灵感孵化了。</div>';
+    return;
+  }
+
+  host.innerHTML = list.map(t => {
+    const miss = t['缺冲突'] || [];
+    const title = (t['标题候选'] || '').split('|')[0].trim() || t.id;
+    const alts = (t['标题候选'] || '').split('|').slice(1).map(s => s.trim()).filter(Boolean);
+    return `<div class="tp ${PICK === t.id ? 'on' : ''}" data-id="${esc(t.id)}">
+      <div class="tp-top">
+        <div class="tp-t">${esc(title)}</div>
+        <span class="chip ${t['优先级'] === 'P0' ? 'wait' : ''}">${esc(t['优先级'] || '')}</span>
+      </div>
+      <div class="tp-meta">
+        ${(t['目标平台'] || '').split(',').filter(Boolean).map(p => platTag(p.trim())).join('')}
+        ${t['状态'] ? `<span class="tag">${esc(t['状态'])}</span>` : ''}
+        ${miss.length ? `<span class="tag bad">缺 ${miss.length} 格冲突</span>` : `<span class="tag" style="background:var(--mint);color:#3E8E68">冲突齐了</span>`}
+        ${(t['稿件'] || []).length ? `<span class="tag">${t['稿件'].length} 篇稿</span>` : ''}
+      </div>
+      ${alts.length ? `<div class="tp-why">备选标题：${esc(alts.join(' / '))}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  host.querySelectorAll('.tp').forEach(el => {
+    el.addEventListener('click', () => { PICK = el.dataset.id; renderList(); renderPane(); });
+  });
+}
+
+function conflictCard(label, value, id){
+  const miss = isBlank(value);
+  return `<div class="cf-row ${miss ? 'miss' : ''}">
+    <div class="cf-k">${label}${miss ? ' · 待填' : ''}</div>
+    <div class="cf-v">${miss ? '还没填' : esc(value)}</div>
+  </div>`;
+}
+
+function renderPane(){
+  const host = $('#pane');
+  if(!PICK){
+    host.innerHTML = `<div class="card"><div class="blank">
+      左边点一条选题。<br>右边能改冲突四格。
+    </div></div>`;
+    return;
+  }
+
+  const t = (STATE['选题'] || []).find(x => x.id === PICK);
+  if(!t){ host.innerHTML = ''; return; }
+
+  const drafts = (STATE['稿件'] || []).filter(d => d['选题'] === t.id);
+  const title = (t['标题候选'] || '').split('|')[0].trim() || t.id;
+  const bodyText = (t['正文'] || '').replace(/^##\s*/gm, '').trim();
+
+  host.innerHTML = `
+    <div class="card">
+      <div class="pane-h">
+        <h2>${esc(title)}</h2>
+      </div>
+      <div class="pane-sub">${esc(t.id)} · 创建于 ${esc(t['创建'] || '')} · 状态 ${esc(t['状态'] || '待定')}</div>
+
+      <div class="kv">
+        <span>来自灵感 <b>${esc(t['来自灵感'] || '—')}</b></span>
+        <span>优先级 <b>${esc(t['优先级'] || '—')}</b></span>
+      </div>
+
+      <div class="sec-t">冲突四格 · 填不全就别往下走</div>
+      <div class="cf">
+        ${conflictCard('正方', t['正方'], t.id)}
+        ${conflictCard('反方', t['反方'], t.id)}
+        ${conflictCard('我站', t['我站'], t.id)}
+        ${conflictCard('我可能错在哪', t['我可能错在哪'], t.id)}
+      </div>
+
+      <div class="sec-t">标题候选</div>
+      <div class="field">
+        <input id="fTitle" value="${esc(t['标题候选'] || '')}" placeholder="主标题 | 备选一 | 备选二">
+      </div>
+
+      <div class="sec-t">正文（要传的信息 / 必须写进去的细节）</div>
+      <div class="doc" style="max-height:180px;overflow-y:auto;background:#FAFAFA;border-radius:12px;padding:12px 14px">
+        ${bodyText ? renderMd(bodyText) : '<span style="color:#B5B5B5">还没写</span>'}
+      </div>
+      <div class="pane-sub" style="margin-top:8px">正文在 Obsidian 里改，或者下拉去工作台跟 AI 聊。</div>
+
+      ${drafts.length ? `
+        <div class="sec-t">衍生稿件 ${drafts.length}</div>
+        <div class="drafts">
+          ${drafts.map(d => `<a class="dr-row" href="index.html?kind=${encodeURIComponent('稿件')}&id=${encodeURIComponent(d.id)}">
+            <span class="g">${esc(d.id)} · ${esc(d['选题标题'] || '')}</span>
+            <span class="m">${esc(d['状态'] || '')} · ${esc(d['版本'] || 'v1')}</span>
+          </a>`).join('')}
+        </div>` : ''}
+
+      <div style="display:flex;gap:8px;margin-top:18px">
+        <a class="btn btn-primary" href="index.html?kind=${encodeURIComponent('选题')}&id=${encodeURIComponent(t.id)}">去工作台聊这条</a>
+        <button class="btn" id="saveBtn">保存字段</button>
+      </div>
+    </div>`;
+
+  $('#saveBtn').addEventListener('click', async (ev) => {
+    ev.target.disabled = true;
+    try{
+      await postJSON('/api/write', {
+        kind: '选题', id: t.id,
+        '字段': { '标题候选': $('#fTitle').value.trim() }
+      });
+      STATE = await getJSON('/api/state');
+      renderSide(STATE, 'topics');
+      renderList();
+      renderPane();
+      toast('已保存');
+    }catch(e){
+      toast('没保存上：' + e.message);
+    }finally{
+      ev.target.disabled = false;
+    }
+  });
+}
+
+(async function init(){
+  STATE = await boot('topics');
+  if(!STATE){ offlineBlock($('#list')); return; }
+  renderList();
+  renderPane();
+})();
+</script>
+</body>
+</html>

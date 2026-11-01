@@ -2,354 +2,259 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>数据 · 橘子头内容工作站</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>数据 · 内容矩阵</title>
 <link rel="stylesheet" href="assets/app.css">
 <style>
-  .line-card{grid-column:1 / -1}
-  .dual{display:grid;grid-template-columns:1.55fr .85fr;gap:13px}
-  .chart-svg{width:100%;height:auto;display:block;overflow:visible}
-  .filters{display:flex;gap:6px;margin-left:auto}
-  .fbtn{font-size:10px;padding:4px 10px;border-radius:8px;border:1px solid var(--line2);
-    background:#fff;color:#8A8A8A;cursor:pointer;transition:.16s}
-  .fbtn:hover{color:var(--ink)}
-  .fbtn.on{background:var(--ink);border-color:var(--ink);color:#fff}
-  @media(max-width:960px){ .dual{grid-template-columns:1fr} }
+  .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+  .grid3{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:12px}
+  .wk-bars{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end;height:120px}
+  .wk-col{display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+  .wk-bar{width:100%;max-width:34px;border-radius:6px 6px 3px 3px;background:#EAEAEA;transition:height .4s;min-height:3px}
+  .wk-bar.now{background:var(--accent)}
+  .wk-n{font-size:10px;font-weight:600;color:#8A8A8A;font-variant-numeric:tabular-nums}
+  .wk-n.now{color:var(--accent)}
+  .wk-lb{font-size:9px;color:#BEBEBE;white-space:nowrap}
+  .form-row{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  @media(max-width:1180px){.grid3{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+  @media(max-width:820px){.form-row{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
-
 <div class="app">
-  <aside class="side">
-    <div class="brand">
-      <div class="mark">🍊</div>
-      <div>
-        <div class="name">橘子头</div>
-        <div class="sub">CONTENT DESK</div>
-      </div>
-    </div>
-
-    <div class="nav-label">工作站</div>
-    <nav class="nav">
-      <a class="nav-item" href="index.html">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
-        总览
-      </a>
-      <a class="nav-item" href="pipeline.html">
-        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.8"/><rect x="9.5" y="4" width="5" height="11" rx="1.8"/><rect x="16" y="4" width="5" height="7" rx="1.8"/></svg>
-        流水线<span class="n" data-count="pipeline">0</span>
-      </a>
-      <a class="nav-item on" href="data.html">
-        <svg viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3.5-4.5 3 2.5L20 7"/></svg>
-        数据<span class="n" data-count="week">0</span>
-      </a>
-    </nav>
-
-    <div class="side-foot">
-      <div class="me">
-        <div class="me-top">
-          <div class="me-av">🍊</div>
-          <div>
-            <div class="me-name">橘子头</div>
-            <div class="me-role">AI × 个人知识管理</div>
-          </div>
-        </div>
-        <div class="me-stats">
-          <div><b id="meWeek">—</b><span>本周已发</span></div>
-          <div><b id="meWait">—</b><span>等你</span></div>
-          <div><b id="meRead">—</b><span>总阅读</span></div>
-        </div>
-        <div class="open-note">数据源 · <b>数据/发布记录.csv</b></div>
-      </div>
-    </div>
-  </aside>
+  <aside class="side" id="side"></aside>
 
   <main class="main">
     <div class="topbar">
-      <div class="crumb"><b>数据</b> / 已发布的笔记</div>
+      <div class="crumb">数据 · <b id="weekLabel"></b></div>
       <div class="top-right">
-        <div class="sync"><i class="dot loading" id="syncDot"></i><span id="syncText">连接中</span></div>
-        <button class="icon-btn" id="btnReload" title="刷新">
-          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.6 5.9"/><path d="M20 5v6h-6"/></svg>
+        <div class="sync"><span id="syncDot" class="dot"></span><span id="syncText"></span></div>
+        <button class="icon-btn" id="reload" title="重新读">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.3M20 5v6h-6"/></svg>
         </button>
-        <div class="avatar">🍊</div>
       </div>
     </div>
 
-    <div class="sec-head" style="margin-top:8px">
-      <h2 id="pageTitle">本周发布</h2><span id="pageSub">—</span>
+    <div id="top"></div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div id="empty"></div>
+
+    <div class="grid2" id="rowA" style="margin-top:20px"></div>
+    <div class="grid2" id="rowB" style="margin-top:12px"></div>
+
+    <div class="sec-head"><h2>投放明细</h2><span id="mineCount"></span></div>
+    <div class="card" style="padding:15px 10px 10px">
+      <div class="table-wrap"><table class="tb" id="table"></table></div>
     </div>
 
-    <section class="kpis" id="kpis"></section>
-
-    <div class="sec-head">
-      <h2>趋势</h2><span>周为单位的发布量与阅读量</span>
-    </div>
-    <section class="dual">
-      <div class="card">
-        <div class="card-h"><b>每周阅读量</b><span id="lineTip">近六周</span></div>
-        <svg class="chart-svg" id="lineChart" viewBox="0 0 620 214" preserveAspectRatio="xMidYMid meet"></svg>
-        <div class="card-foot" id="lineFoot"></div>
+    <div class="sec-head"><h2>手动补一条</h2><span>书签脚本还没做，先手填</span></div>
+    <div class="card">
+      <div class="form-row">
+        <div class="field"><label>账号</label><select id="fAcc"></select></div>
+        <div class="field"><label>发布日</label><input id="fDay" type="date"></div>
+        <div class="field" style="grid-column:span 2"><label>标题</label><input id="fTitle" placeholder="这篇叫什么"></div>
+        <div class="field"><label>阅读</label><input id="fRead" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label>点赞</label><input id="fLike" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label>收藏</label><input id="fFav" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label>评论</label><input id="fCmt" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label>涨粉</label><input id="fGrow" inputmode="numeric" placeholder="0"></div>
+        <div class="field" style="grid-column:span 2"><label>推广动作（可选）</label><input id="fPromo" placeholder="比如：薯条 100 元"></div>
       </div>
-      <div class="card">
-        <div class="card-h"><b>平台对比</b><span>累计</span></div>
-        <div class="cbars" id="plat"></div>
-        <div class="cstats" id="platStats"></div>
-        <div class="card-foot" id="platFoot"></div>
-      </div>
-    </section>
-
-    <div class="sec-head">
-      <h2>值得记一笔的</h2><span>由数据直接算出来，不是感觉</span>
-    </div>
-    <div class="insight">
-      <h3><i></i>这组数字在说什么</h3>
-      <ul id="insights"></ul>
-    </div>
-
-    <div class="sec-head">
-      <h2>单篇明细</h2><span id="rowCount">—</span>
-      <div class="filters">
-        <button class="fbtn on" data-pf="全部">全部</button>
-        <button class="fbtn" data-pf="小红书">小红书</button>
-        <button class="fbtn" data-pf="公众号">公众号</button>
-      </div>
-    </div>
-    <div class="card" style="padding:16px 16px 6px">
-      <div class="table-wrap">
-        <table class="tb">
-          <thead><tr>
-            <th class="tl">日期</th>
-            <th class="tl">标题</th>
-            <th class="tl">平台</th>
-            <th class="sort" data-key="阅读">阅读</th>
-            <th class="sort" data-key="点赞">点赞</th>
-            <th class="sort" data-key="收藏">收藏</th>
-            <th class="sort" data-key="评论">评论</th>
-            <th class="sort on" data-key="互动率">互动率</th>
-          </tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
+      <button class="btn btn-primary" id="addBtn" style="margin-top:4px">写进去</button>
+      <span class="pane-sub" style="display:inline-block;margin-left:10px;font-size:10px;color:#B5B5B5">
+        同一天同一账号同一标题会覆盖，不会重复
+      </span>
     </div>
   </main>
 </div>
-
 <div class="toast" id="toast"></div>
+
 <script src="assets/app.js"></script>
 <script>
-const view = { pf:'全部', key:'互动率', desc:true };
+let STATE = null;
 
-function kpiCard(v, k, d){
-  return `<div class="kpi">
-    <div class="kv">${v}</div>
-    <div class="kk">${k}</div>
-    <div class="kd">${d || '&nbsp;'}</div>
-  </div>`;
+function kpi(v, k, d){
+  return `<div class="kpi"><div class="kv num">${v}</div><div class="kk">${k}</div>
+    ${d ? `<div class="kd">${d}</div>` : ''}</div>`;
 }
 
-function renderKpis(s){
-  const w = s['本周'];
-  const dRead = delta(w['阅读'], w['上周阅读']);
-  const dInter = delta(w['互动'], w['上周互动']);
-  const dPub = delta(w['篇数'], w['上周篇数']);
+function renderTop(){
+  const S = STATE['统计'] || {};
+  const wk = S['本周'] || {};
+  $('#weekLabel').textContent = (wk['标签'] || '') + ' · 第 ' + (wk['第几天'] || 0) + ' 天';
 
-  document.getElementById('pageTitle').textContent = `本周发了 ${w['篇数']} 篇`;
-  document.getElementById('pageSub').textContent =
-    `${w['标签']} · 第 ${w['第几天']} 天 · 目标 ${w['目标']} 篇`;
+  const up = (a, b) => {
+    if(!b) return a ? '<span class="up">新增</span>' : '—';
+    const r = Math.round((a - b) * 1000 / b) / 10;
+    return r > 0 ? `<span class="up">+${r}%</span>` : (r < 0 ? r + '%' : '持平');
+  };
 
-  document.getElementById('kpis').innerHTML = [
-    kpiCard(`${w['篇数']}<small>/${w['目标']}</small>`, '本周已发布',
-      `完成 <b class="${w['完成率'] >= 100 ? 'up' : ''}">${Math.round(w['完成率'])}%</b> · 上周 ${w['上周篇数']} 篇`),
-    kpiCard(fmt(w['阅读']), '本周阅读',
-      `<span class="${dRead.cls}">${dRead.txt}</span> 比上周`),
-    kpiCard(fmt(w['互动']), '本周点赞+收藏+评论',
-      `<span class="${dInter.cls}">${dInter.txt}</span> 比上周`),
-    kpiCard(fmt(w['涨粉']), '本周涨粉',
-      `互动率 <b>${w['阅读'] ? pct(w['互动'] * 100 / w['阅读']) : '—'}</b>`)
-  ].join('');
-}
+  $('#kpis').innerHTML =
+    kpi(wk['篇数'] || 0, '本周发布', '目标 ' + (wk['目标'] || 0) + ' · 上周 ' + (wk['上周篇数'] || 0)) +
+    kpi(fmt(wk['阅读'] || 0), '本周阅读', up(wk['阅读'] || 0, wk['上周阅读'] || 0)) +
+    kpi(fmt(wk['互动'] || 0), '本周互动', up(wk['互动'] || 0, wk['上周互动'] || 0)) +
+    kpi(fmt(wk['涨粉'] || 0), '本周涨粉', '累计 ' + fmt((S['累计'] || {})['涨粉'] || 0));
 
-function lineChart(weeks){
-  const svg = document.getElementById('lineChart');
-  // 按容器实际宽度定 viewBox：字不会因为缩放变成 5px
-  const W = Math.max(300, Math.round(svg.clientWidth || 620));
-  const H = W < 420 ? 176 : 214;
-  const L = W < 420 ? 26 : 34, R = W < 420 ? 18 : 26, T = 28, B = 34;
-  const fs = W < 420 ? 8.5 : 10;
-  const vals = weeks.map(w => w['阅读']);
-  const max = Math.max(1, ...vals);
-  const step = (W - L - R) / (weeks.length - 1);
-  const ih = H - T - B;
-
-  const pts = weeks.map((w, i) => ({
-    x: L + i * step,
-    y: T + ih - (w['阅读'] / max) * ih,
-    v: w['阅读'],
-    label: w['本周'] ? '本周' : w['标签'],
-    now: w['本周']
-  }));
-
-  const path = pts.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join(' ');
-  const area = path + ` L${pts[pts.length - 1].x.toFixed(1)} ${T + ih} L${pts[0].x.toFixed(1)} ${T + ih} Z`;
-
-  // 三条横向参考线
-  const grid = [0, .5, 1].map(f => {
-    const y = T + ih - f * ih;
-    return `<line x1="${L}" y1="${y}" x2="${W - R}" y2="${y}" stroke="#F4F4F4" stroke-width="1"/>`;
-  }).join('');
-
-  const dots = pts.map(p => `
-    <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.now ? 5 : 3.6}"
-      fill="${p.now ? '#FF5A5F' : '#fff'}" stroke="${p.now ? '#FF5A5F' : '#DCDCDC'}" stroke-width="2"/>
-    <text x="${p.x.toFixed(1)}" y="${(p.y - 11).toFixed(1)}" text-anchor="middle" font-size="${fs}"
-      font-weight="600" fill="${p.now ? '#FF5A5F' : '#9B9B9B'}" font-family="inherit">${fmtShort(p.v)}</text>
-    <text x="${p.x.toFixed(1)}" y="${H - 12}" text-anchor="middle" font-size="${fs - .5}"
-      fill="${p.now ? '#141414' : '#BEBEBE'}" font-family="inherit">${p.label}</text>`).join('');
-
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('height', H);
-
-  svg.innerHTML = `
-    <defs>
-      <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#FF5A5F" stop-opacity=".13"/>
-        <stop offset="1" stop-color="#FF5A5F" stop-opacity="0"/>
-      </linearGradient>
-    </defs>
-    ${grid}
-    <path d="${area}" fill="url(#areaFill)"/>
-    <path d="${path}" fill="none" stroke="#FF5A5F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    ${dots}`;
-}
-
-function fmtShort(n){
-  n = Number(n || 0);
-  if(n >= 10000) return (n / 10000).toFixed(1) + '万';
-  if(n >= 1000) return (n / 1000).toFixed(1) + 'k';
-  return String(n);
-}
-
-function renderPlatform(s){
-  const list = s['平台'];
-  const maxRead = Math.max(1, ...list.map(p => p['阅读']));
-  const colors = {'小红书':'#FF5A5F','公众号':'#3FBF7F'};
-
-  document.getElementById('plat').innerHTML = list.map(p => `
-    <div class="cbar">
-      <div class="ct"><span>${esc(p['平台'])}</span><b>${p['篇数']} 篇 · 阅读 ${fmt(p['阅读'])}</b></div>
-      <div class="ctrack"><i style="width:${Math.round(p['阅读'] / maxRead * 100)}%;background:${colors[p['平台']] || '#141414'}"></i></div>
-    </div>`).join('');
-
-  const best = list.slice().sort((a, b) => b['互动率'] - a['互动率'])[0];
-  document.getElementById('platStats').innerHTML = list.map(p => `
-    <div><b>${pct(p['互动率'])}</b><span>${esc(p['平台'])}互动率</span></div>`).join('');
-
-  if(list.length >= 2){
-    const hi = best, lo = list.slice().sort((a, b) => a['互动率'] - b['互动率'])[0];
-    document.getElementById('platFoot').textContent =
-      `${hi['平台']}的互动率是${lo['平台']}的 ${(hi['互动率'] / Math.max(lo['互动率'], .01)).toFixed(1)} 倍：同样的选题先在${hi['平台']}试水，跑得动再改成${lo['平台']}长文。`;
+  if(!S['有数据']){
+    $('#empty').innerHTML = `<div class="banner" style="margin-top:14px">
+      <b>还没有真实数据。</b> 这一页不编数字，所以现在是空的。<br>
+      发出去一篇之后，在下面「手动补一条」填进去，或者等书签脚本做好，点一下就能抓。
+    </div>`;
+  }else{
+    $('#empty').innerHTML = '';
   }
 }
 
-function renderRows(s){
-  let rows = s['明细'];
-  if(view.pf !== '全部') rows = rows.filter(r => r['平台'] === view.pf);
-  rows = rows.slice().sort((a, b) => view.desc
-    ? b[view.key] - a[view.key]
-    : a[view.key] - b[view.key]);
+function renderAccounts(){
+  const S = STATE['统计'] || {};
+  const accs = S['按账号'] || [];
+  const plats = S['按平台'] || [];
+  const maxRead = Math.max(1, ...accs.map(a => a['阅读']));
 
-  document.getElementById('rowCount').textContent =
-    `${rows.length} 条 · 按${view.key}${view.desc ? '从高到低' : '从低到高'}`;
-
-  const maxRead = Math.max(1, ...rows.map(r => r['阅读']));
-  document.getElementById('rows').innerHTML = rows.map(r => `
-    <tr>
-      <td class="tl"><span class="tb-date">${r['日期'].slice(5)}</span></td>
-      <td class="tl"><div class="tb-title">${esc(r['标题'])}</div></td>
-      <td class="tl"><span class="pf ${r['平台'] === '小红书' ? 'xhs' : r['平台'] === '公众号' ? 'wx' : 'other'}">${esc(r['平台'])}</span></td>
-      <td class="${r['阅读'] === maxRead ? 'tb-hot' : ''}">${fmt(r['阅读'])}</td>
-      <td>${fmt(r['点赞'])}</td>
-      <td>${fmt(r['收藏'])}</td>
-      <td>${fmt(r['评论'])}</td>
-      <td>${pct(r['互动率'])}</td>
-    </tr>`).join('') || `<tr><td colspan="8"><div class="blank" style="padding:24px 0">这个平台还没有记录</div></td></tr>`;
+  $('#rowA').innerHTML = `
+    <div class="card">
+      <div class="card-h"><b>按账号</b><span>${accs.length} 个有数据</span></div>
+      ${accs.length ? `<div class="bars">${accs.map(a => `
+        <div class="bar">
+          <div class="bt">${esc(a['账号名'])} ${platTag(a['平台'])}
+            <b>${fmt(a['阅读'])}</b></div>
+          <div class="track"><i class="${a['阅读'] === maxRead ? 'hot' : ''}"
+            style="width:${Math.max(3, a['阅读'] * 100 / maxRead)}%"></i></div>
+          <div style="font-size:9.5px;color:#B5B5B5">${a['篇数']} 篇 · 互动率 ${pct(a['互动率'])} · 涨粉 ${fmt(a['涨粉'])}</div>
+        </div>`).join('')}</div>` : '<div class="blank" style="padding:20px">没有投放记录</div>'}
+    </div>
+    <div class="card">
+      <div class="card-h"><b>按平台</b><span>哪边值得多花时间</span></div>
+      ${plats.length ? `<div class="bars">${plats.map(p => `
+        <div class="bar">
+          <div class="bt">${esc(p['平台'])}<b>${fmt(p['阅读'])}</b></div>
+          <div class="track"><i style="width:${Math.max(3, p['阅读'] * 100 / Math.max(1, ...plats.map(x => x['阅读'])))}%"></i></div>
+          <div style="font-size:9.5px;color:#B5B5B5">${p['篇数']} 篇 · 互动率 ${pct(p['互动率'])}</div>
+        </div>`).join('')}</div>` : '<div class="blank" style="padding:20px">没有投放记录</div>'}
+    </div>`;
 }
 
-function renderInsights(s){
-  const w = s['本周'], best = s['最佳'], tot = s['累计'];
-  const ws = s['周趋势'];
-  const avg = ws.reduce((a, b) => a + b['篇数'], 0) / ws.length;
-  const plats = s['平台'].slice().sort((a, b) => b['互动率'] - a['互动率']);
-  const out = [];
+function renderWeeks(){
+  const S = STATE['统计'] || {};
+  const weeks = S['周趋势'] || [];
+  const max = Math.max(1, ...weeks.map(w => w['篇数']));
+  const best = S['最佳'];
 
-  if(best){
-    out.push(`跑得最远的是《<b>${esc(best['标题'])}</b>》，${best['平台']}，阅读 ${fmt(best['阅读'])}，互动率 ${pct(best['互动率'])}。`);
-  }
-  if(plats.length >= 2){
-    out.push(`小红书互动率 <b>${pct(plats[0]['互动率'])}</b>，公众号 <b>${pct(plats[1]['互动率'])}</b>。公众号阅读低不代表不行，是渠道分发方式不同，别拿同一把尺量。`);
-  }
-  out.push(`节奏上，六周平均每周 <b>${avg.toFixed(1)}</b> 篇，这周 <b>${w['篇数']}</b> 篇${w['篇数'] >= avg ? '，高于平均' : '，低于平均'}；离 ${w['目标']} 篇的目标${w['篇数'] >= w['目标'] ? '已达成' : `还差 ${w['目标'] - w['篇数']} 篇`}。`);
-
-  const dRead = delta(w['阅读'], w['上周阅读']);
-  if(w['上周阅读']){
-    out.push(`本周阅读 ${fmt(w['阅读'])}，比上周${dRead.cls === 'up' ? '多' : dRead.cls === 'down' ? '少' : '持平'} ${dRead.txt.replace('+','').replace('−','')}。篇数${w['篇数'] >= w['上周篇数'] ? '多了' : '少了'}，阅读${dRead.cls === 'down' ? '反而掉了' : '跟着涨'}——${dRead.cls === 'down' ? '说明这几篇的选题弱于上周，不是发得不够' : '说明多发确实有效'}。`);
-  }
-
-  out.push(`累计 ${tot['篇数']} 次发布，阅读 ${fmt(tot['阅读'])}，涨粉 ${fmt(tot['涨粉'])}。`);
-
-  document.getElementById('insights').innerHTML = out.map(t => `<li>${t}</li>`).join('');
+  $('#rowB').innerHTML = `
+    <div class="card">
+      <div class="card-h"><b>近六周</b><span>按发布篇数</span></div>
+      <div class="wk-bars">
+        ${weeks.map(w => `
+          <div class="wk-col">
+            <div class="wk-n ${w['本周'] ? 'now' : ''}">${w['篇数']}</div>
+            <div class="wk-bar ${w['本周'] ? 'now' : ''}" style="height:${Math.max(3, w['篇数'] * 100 / max)}%"></div>
+            <div class="wk-lb">${esc(w['标签'])}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><b>值得记一笔的</b><span>脚本算的，你改不了</span></div>
+      ${best ? `<div class="insight">
+        <h3><i></i>阅读最高的一篇</h3>
+        <ul>
+          <li><b>${esc(best['标题'])}</b><br>${esc(best['平台'])} · ${fmt(best['阅读'])} 阅读 · 互动率 ${pct(best['互动率'])}</li>
+          <li>发布在 ${esc(best['发布日'])}</li>
+        </ul>
+      </div>` : `<div class="blank" style="padding:20px">还没数据，算不出来</div>`}
+    </div>`;
 }
 
-function bindSort(){
-  document.querySelectorAll('th.sort').forEach(th => {
-    th.addEventListener('click', () => {
-      const k = th.dataset.key;
-      view.desc = (view.key === k) ? !view.desc : true;
-      view.key = k;
-      document.querySelectorAll('th.sort').forEach(x => x.classList.toggle('on', x === th));
-      renderRows(window.__stats);
-    });
-  });
-  document.querySelectorAll('.fbtn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.fbtn').forEach(x => x.classList.toggle('on', x === btn));
-      view.pf = btn.dataset.pf;
-      renderRows(window.__stats);
-    });
-  });
-}
+function renderTable(){
+  const rows = STATE['投放'] || [];
+  $('#mineCount').textContent = rows.length ? rows.length + ' 条' : '';
 
-(async function(){
-  const shell = await mountShell();
-  if(!shell){
-    document.getElementById('pageSub').textContent = '先启动本地服务';
+  if(!rows.length){
+    $('#table').innerHTML = `<tbody><tr><td style="text-align:center;color:#B5B5B5;padding:26px">
+      还没有投放记录
+    </td></tr></tbody>`;
     return;
   }
-  const s = shell.stats;
-  window.__stats = s;
 
-  renderKpis(s);
-  lineChart(s['周趋势']);
-  renderPlatform(s);
-  renderRows(s);
-  renderInsights(s);
-  bindSort();
+  $('#table').innerHTML = `
+    <thead><tr>
+      <th class="tl">标题</th><th class="tl">账号</th><th>发布日</th>
+      <th>阅读</th><th>点赞</th><th>收藏</th><th>评论</th><th>互动率</th><th>涨粉</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map(r => `<tr>
+        <td class="tl"><div class="tb-title">${esc(r['标题'])}</div></td>
+        <td class="tl">${esc(r['账号名'])} ${platTag(r['平台'])}</td>
+        <td><span class="tb-date">${esc(r['发布日'])}</span></td>
+        <td class="${r['阅读'] ? 'tb-hot' : ''}">${fmt(r['阅读'])}</td>
+        <td>${fmt(r['点赞'])}</td>
+        <td>${fmt(r['收藏'])}</td>
+        <td>${fmt(r['评论'])}</td>
+        <td>${pct(r['互动率'])}</td>
+        <td>${fmt(r['涨粉'])}</td>
+      </tr>`).join('')}
+    </tbody>`;
+}
 
-  const total = s['累计']['篇数'];
-  document.getElementById('lineTip').textContent = `近六周 · 共 ${total} 条记录`;
-  const last = s['周趋势'][s['周趋势'].length - 1], prev = s['周趋势'][s['周趋势'].length - 2];
-  const dv = delta(last['阅读'], prev['阅读']);
-  document.getElementById('lineFoot').textContent =
-    `本周阅读 ${fmt(last['阅读'])}，${dv.txt === '持平' ? '与上周持平' : '比上周' + dv.txt}。周发布量在 ${Math.min(...s['周趋势'].map(x => x['篇数']))}–${Math.max(...s['周趋势'].map(x => x['篇数']))} 篇之间。`;
+function renderForm(){
+  const accs = STATE['账号'] || [];
+  $('#fAcc').innerHTML = accs.map(a =>
+    `<option value="${esc(a.id)}">${esc(a['账号名'])} · ${esc(a['平台'])}</option>`).join('');
+  if(!$('#fDay').value){
+    $('#fDay').value = new Date().toISOString().slice(0, 10);
+  }
+}
 
-  document.getElementById('btnReload').addEventListener('click', () => location.reload());
+async function addRow(){
+  const btn = $('#addBtn');
+  const title = $('#fTitle').value.trim();
+  if(!title){ toast('先写个标题'); return; }
 
-  let rzTimer = null;
-  window.addEventListener('resize', () => {
-    clearTimeout(rzTimer);
-    rzTimer = setTimeout(() => lineChart(window.__stats['周趋势']), 160);
-  });
+  btn.disabled = true;
+  try{
+    await postJSON('/api/pub', {
+      '账号': $('#fAcc').value,
+      '发布日': $('#fDay').value,
+      '标题': title,
+      '阅读': $('#fRead').value,
+      '点赞': $('#fLike').value,
+      '收藏': $('#fFav').value,
+      '评论': $('#fCmt').value,
+      '涨粉': $('#fGrow').value,
+      '推广动作': $('#fPromo').value
+    });
+    ['#fTitle', '#fRead', '#fLike', '#fFav', '#fCmt', '#fGrow', '#fPromo'].forEach(s => $(s).value = '');
+    await reload();
+    toast('写进去了');
+  }catch(e){
+    toast('没写进去：' + e.message);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function reload(){
+  STATE = await getJSON('/api/state');
+  renderSide(STATE, 'data');
+  renderTop();
+  renderAccounts();
+  renderWeeks();
+  renderTable();
+  renderForm();
+  setSync('ok', '已连接 · ' + (STATE['服务时间'] || ''));
+}
+
+(async function init(){
+  STATE = await boot('data');
+  if(!STATE){ offlineBlock($('#top')); return; }
+  renderTop();
+  renderAccounts();
+  renderWeeks();
+  renderTable();
+  renderForm();
+  $('#addBtn').addEventListener('click', addRow);
+  $('#reload').addEventListener('click', reload);
 })();
 </script>
 </body>

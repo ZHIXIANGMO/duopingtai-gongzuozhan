@@ -1,18 +1,21 @@
 # -*- coding: utf-8 -*-
-"""内容流水线 - 本地小服务
+"""内容矩阵控制台 - 本地服务
 
-只干两件事：
-  1. 把 工作台.html 托管在 http://127.0.0.1:8777/
-  2. 读写 数据/内容/*.md 的 frontmatter
+一个身份可以开多个平台账号，一个平台可以有多个身份。
+想法进来，长出成稿，投到具体账号，回来数据。
 
-不联网、不装第三方库、只监听本机回环地址。
+零依赖：只用标准库。只监听 127.0.0.1。
 """
 
 import csv
 import json
 import os
+import re
+import secrets
 import sys
 import threading
+import urllib.error
+import urllib.request
 import webbrowser
 from datetime import date, datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -22,31 +25,45 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONTENT = os.path.join(ROOT, "数据", "内容")
-PUBLISHED = os.path.join(ROOT, "数据", "发布记录.csv")
-SETTINGS = os.path.join(ROOT, "数据", "设置.json")
-PAGE = "index.html"
+DATA = os.path.join(ROOT, "数据")
+DIRS = {
+    "身份": os.path.join(DATA, "身份"),
+    "账号": os.path.join(DATA, "账号"),
+    "灵感": os.path.join(DATA, "灵感"),
+    "选题": os.path.join(DATA, "选题"),
+    "稿件": os.path.join(DATA, "稿件"),
+}
+PUB_CSV = os.path.join(DATA, "投放.csv")
+SETTINGS = os.path.join(DATA, "设置.json")
+LOCAL_CONF = os.path.join(ROOT, "本地配置.json")
+
 PORT = 8777
-WEEK_GOAL = 5
 WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"]
 
-# frontmatter 的固定字段顺序，写回时按这个排，避免每次 diff 都乱序
-ORDER = [
-    "id", "标题", "渠道", "阶段", "状态", "待你确认", "优先级",
-    "调研", "选题", "草稿", "配图", "排版", "发布", "送审", "数据", "复盘",
-    "创建", "更新", "阅读", "点赞", "收藏", "评论",
-]
-STEPS = ["调研", "选题", "草稿", "配图", "排版", "发布", "送审", "数据", "复盘"]
-GATE_STEP = {"讨论": "选题", "草稿": "草稿", "配图": "配图", "排版": "排版"}
+# 每个实体写回时的字段顺序，避免 diff 乱序
+ORDER = {
+    "身份": ["id", "名称", "定位", "读者", "语言风格", "偏爱话题", "禁区", "锚点习惯", "创建"],
+    "账号": ["id", "身份", "平台", "账号名", "粉丝基线", "状态", "书签适配器", "创建"],
+    "灵感": ["id", "来源", "原话", "捕获", "关联身份", "状态"],
+    "选题": ["id", "来自灵感", "标题候选", "正方", "反方", "我站", "我可能错在哪",
+           "目标身份", "目标平台", "优先级", "状态", "创建"],
+    "稿件": ["id", "选题", "身份", "版本", "状态", "字数", "创建", "更新"],
+}
+
+PUB_FIELDS = ["id", "发布日", "标题", "稿件", "账号", "适配说明", "链接",
+              "阅读", "点赞", "收藏", "评论", "涨粉", "更新于", "推广动作", "推广结果"]
+
+# 选题的冲突四字段。缺一个就说明这个题还没硬起来。
+CONFLICT_FIELDS = ["正方", "反方", "我站", "我可能错在哪"]
+EMPTY_VALUES = ("", "待补", "无", "none", "None")
 
 
-# ---------- 读写 md ----------
+# ---------------------------------------------------------------- md 读写
 
-def parse_item(path):
-    """拆出 frontmatter 与正文。只支持 key: value 的扁平结构，够用且不引依赖。"""
+def parse_md(path):
+    """拆 frontmatter 与正文。只认扁平的 key: value。"""
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
-
     meta, body = {}, text
     if text.startswith("---"):
         parts = text.split("---", 2)
@@ -59,123 +76,74 @@ def parse_item(path):
     return meta, body
 
 
-def write_item(path, meta, body):
+def write_md(path, meta, body, kind):
+    order = ORDER.get(kind, [])
     lines = ["---"]
-    for k in ORDER:
-        if k in meta:
+    for k in order:
+        if k in meta and str(meta[k]).strip() != "":
             val = meta[k]
             if k == "id" and not str(val).startswith('"'):
                 val = '"%s"' % val
-            lines.append("%s: %s" % (k, val))
+            lines.append("%s: %s" % (k, str(val).replace("\n", " ")))
     for k, v in meta.items():
-        if k not in ORDER:
-            lines.append("%s: %s" % (k, v))
+        if k not in order and str(v).strip() != "":
+            lines.append("%s: %s" % (k, str(v).replace("\n", " ")))
     lines.append("---")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n\n" + body)
+        f.write("\n".join(lines) + "\n\n" + (body or ""))
 
 
-def age_days(meta):
-    """距离上次更新几天，用来标「卡住了」。"""
-    raw = meta.get("更新") or meta.get("创建")
-    try:
-        d = datetime.strptime(raw, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
-        return 0
-    return max((date.today() - d).days, 0)
+def list_entity(kind):
+    """读一个目录下的全部 md。读失败的不让整个页面崩。"""
+    out = []
+    d = DIRS.get(kind)
+    if not d or not os.path.isdir(d):
+        return out
+    for name in sorted(os.listdir(d)):
+        if not name.lower().endswith(".md"):
+            continue
+        path = os.path.join(d, name)
+        try:
+            meta, body = parse_md(path)
+        except Exception as exc:
+            out.append({"id": os.path.splitext(name)[0], "读取失败": str(exc), "正文": ""})
+            continue
+        item = dict(meta)
+        item.setdefault("id", os.path.splitext(name)[0])
+        item["正文"] = body
+        item["文件"] = name
+        out.append(item)
+    return out
 
 
-def board():
-    items = []
-    if os.path.isdir(CONTENT):
-        for name in sorted(os.listdir(CONTENT)):
-            if not name.lower().endswith(".md"):
-                continue
-            path = os.path.join(CONTENT, name)
-            try:
-                meta, body = parse_item(path)
-            except Exception as exc:
-                items.append({"id": name, "标题": name, "读取失败": str(exc)})
-                continue
-            item = dict(meta)
-            item.setdefault("id", os.path.splitext(name)[0])
-            item.setdefault("标题", item["id"])
-            item["正文"] = body
-            item["文件"] = name
-            item["卡住天数"] = age_days(meta)
-            item["环节"] = [{"名": s, "态": meta.get(s, "未开始")} for s in STEPS]
-            items.append(item)
-    return {"ok": True, "items": items, "服务时间": datetime.now().strftime("%Y-%m-%d %H:%M")}
-
-
-# ---------- 人工确认 ----------
-
-def confirm(payload):
-    item_id = str(payload.get("id", "")).strip()
-    gate = str(payload.get("gate", "")).strip()
-    decision = str(payload.get("decision", "")).strip()
-    note = str(payload.get("note", "")).strip()
-
-    if not item_id:
-        raise ValueError("缺少 id")
-    if gate not in GATE_STEP:
-        raise ValueError("未知的确认点：%s" % gate)
-    if decision not in ("pass", "reject"):
-        raise ValueError("decision 只能是 pass 或 reject")
-
-    path = os.path.join(CONTENT, "%s.md" % item_id)
+def save_entity(kind, item_id, fields=None, body=None):
+    """按 id 找到文件写回。fields 里给空字符串就是清空该字段。"""
+    d = DIRS.get(kind)
+    if not d:
+        raise ValueError("未知的类型：%s" % kind)
+    path = os.path.join(d, "%s.md" % item_id)
     if not os.path.isfile(path):
         raise ValueError("找不到文件：%s" % path)
 
-    meta, body = parse_item(path)
-    today = date.today().isoformat()
-    step = GATE_STEP[gate]
+    meta, old_body = parse_md(path)
+    if fields:
+        for k, v in fields.items():
+            if k in ("id", "正文", "文件"):
+                continue
+            meta[k] = "" if v is None else str(v)
+    if kind == "稿件":
+        meta["更新"] = date.today().isoformat()
+    write_md(path, meta, old_body if body is None else body, kind)
 
-    if decision == "pass":
-        if gate == "讨论":
-            meta["选题"] = "完成"
-            meta["草稿"] = "进行中"
-            meta["阶段"] = "写稿"
-            meta["状态"] = "选题方案已定，AI 开始写初稿"
-        elif gate == "草稿":
-            meta["草稿"] = "完成"
-            meta["配图"] = "进行中"
-            meta["阶段"] = "后期"
-            meta["状态"] = "初稿已定，进入后期，AI 开始配图"
-        elif gate == "配图":
-            meta["配图"] = "完成"
-            meta["排版"] = "进行中"
-            meta["状态"] = "配图已定，AI 开始排版"
-        else:
-            meta["排版"] = "完成"
-            meta["发布"] = "进行中"
-            meta["状态"] = "排版已过，准备发布"
-        meta["待你确认"] = "无"
-    else:
-        if not note:
-            raise ValueError("打回需要写一句原因，否则 AI 不知道为什么返工")
-        meta[step] = "打回"
-        meta["待你确认"] = "无"
-        meta["状态"] = "已打回，等 AI 返工"
-        bullet = "- %s 【%s】打回：%s\n" % (today, gate, note)
-        if "## 人工意见" in body:
-            body = body.rstrip("\n") + "\n" + bullet
-        else:
-            body = body.rstrip("\n") + "\n\n## 人工意见\n" + bullet
-
-    meta["更新"] = today
-    write_item(path, meta, body)
-
-    fresh, _ = parse_item(path)
-    fresh["环节"] = [{"名": s, "态": fresh.get(s, "未开始")} for s in STEPS]
-    fresh["卡住天数"] = age_days(fresh)
-    return {"ok": True, "item": fresh, "说明": "已放行" if decision == "pass" else "已打回"}
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    return fresh
 
 
-# ---------- 发布数据 ----------
+# ---------------------------------------------------------------- 数字
 
 def num(raw):
-    """CSV 里的数字可能是空、带千分位或带「万」，统一转成 int。"""
+    """空、带千分位、带「万」都能吃。"""
     s = str(raw or "").strip().replace(",", "").replace("，", "")
     if not s:
         return 0
@@ -185,25 +153,40 @@ def num(raw):
         return 0
 
 
-def read_published():
-    """读 数据/发布记录.csv。一行 = 一次发布（同一篇稿子发两个平台就是两行）。"""
-    if not os.path.isfile(PUBLISHED):
+def days_since(raw):
+    try:
+        d = datetime.strptime(str(raw).strip(), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return 0
+    return max((date.today() - d).days, 0)
+
+
+def is_blank(v):
+    return str(v if v is not None else "").strip() in EMPTY_VALUES
+
+
+# ---------------------------------------------------------------- 投放
+
+def read_pubs():
+    if not os.path.isfile(PUB_CSV):
         return []
     rows = []
-    with open(PUBLISHED, "r", encoding="utf-8-sig", newline="") as f:
+    with open(PUB_CSV, "r", encoding="utf-8-sig", newline="") as f:
         for raw in csv.DictReader(f):
-            day = (raw.get("日期") or "").strip()
-            if not day:
+            if not (raw.get("发布日") or "").strip():
                 continue
-            read = num(raw.get("阅读"))
             like = num(raw.get("点赞"))
             fav = num(raw.get("收藏"))
             cmt = num(raw.get("评论"))
+            read = num(raw.get("阅读"))
             rows.append({
-                "日期": day,
-                "内容ID": (raw.get("内容ID") or "").strip(),
+                "id": (raw.get("id") or "").strip(),
+                "发布日": raw["发布日"].strip(),
                 "标题": (raw.get("标题") or "").strip() or "未命名",
-                "平台": (raw.get("平台") or "").strip() or "未标记",
+                "稿件": (raw.get("稿件") or "").strip(),
+                "账号": (raw.get("账号") or "").strip(),
+                "适配说明": (raw.get("适配说明") or "").strip(),
+                "链接": (raw.get("链接") or "").strip(),
                 "阅读": read,
                 "点赞": like,
                 "收藏": fav,
@@ -211,16 +194,160 @@ def read_published():
                 "涨粉": num(raw.get("涨粉")),
                 "互动": like + fav + cmt,
                 "互动率": round((like + fav + cmt) * 100.0 / read, 2) if read else 0.0,
+                "更新于": (raw.get("更新于") or "").strip(),
+                "推广动作": (raw.get("推广动作") or "").strip(),
+                "推广结果": (raw.get("推广结果") or "").strip(),
             })
-    rows.sort(key=lambda r: (r["日期"], r["标题"]), reverse=True)
+    rows.sort(key=lambda r: (r["发布日"], r["标题"]), reverse=True)
     return rows
 
+
+def write_pubs(rows):
+    tmp = PUB_CSV + ".tmp"
+    with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=PUB_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+    os.replace(tmp, PUB_CSV)
+
+
+def add_pub(payload):
+    """书签脚本和手填表单都走这里。同一天同一稿件同一账号 = 覆盖，不重复。"""
+    rows = read_pubs()
+    acc = str(payload.get("账号") or "").strip()
+    if not acc:
+        raise ValueError("缺账号")
+
+    day = str(payload.get("发布日") or "").strip() or date.today().isoformat()
+    draft = str(payload.get("稿件") or "").strip()
+    title = str(payload.get("标题") or "").strip()
+
+    hit = None
+    for r in rows:
+        if r["账号"] == acc and r["发布日"] == day and (
+                (draft and r["稿件"] == draft) or (title and r["标题"] == title)):
+            hit = r
+            break
+
+    row = hit or {"id": "pb-%03d" % (len(rows) + 1), "发布日": day, "稿件": draft,
+                  "账号": acc, "适配说明": "", "推广动作": "", "推广结果": ""}
+    row["标题"] = title or row.get("标题") or "未命名"
+    for k in ("阅读", "点赞", "收藏", "评论", "涨粉"):
+        if payload.get(k) not in (None, ""):
+            row[k] = num(payload.get(k))
+    if payload.get("链接"):
+        row["链接"] = str(payload["链接"]).strip()
+    if payload.get("适配说明"):
+        row["适配说明"] = str(payload["适配说明"]).strip()
+    if payload.get("推广动作"):
+        row["推广动作"] = str(payload["推广动作"]).strip()
+    if payload.get("推广结果"):
+        row["推广结果"] = str(payload["推广结果"]).strip()
+    row["更新于"] = date.today().isoformat()
+
+    if hit is None:
+        rows.append(row)
+    write_pubs(rows)
+    return row
+
+
+# ---------------------------------------------------------------- 设置
+
+def load_json(path, default):
+    if not os.path.isfile(path):
+        return dict(default)
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            got = json.load(f)
+        out = dict(default)
+        out.update(got or {})
+        return out
+    except Exception:
+        return dict(default)
+
+
+def settings():
+    return load_json(SETTINGS, {"每周目标": 5, "身份": "", "模型": {}})
+
+
+def local_conf():
+    return load_json(LOCAL_CONF, {"api_key": "", "代理": "", "接口": "", "模型名": ""})
+
+
+def ensure_bookmark_token():
+    """书签脚本要带一个本地令牌，防止别的网页偷偷往这里 POST。"""
+    s = settings()
+    if s.get("书签令牌"):
+        return s["书签令牌"]
+    token = secrets.token_hex(8)
+    s["书签令牌"] = token
+    with open(SETTINGS, "w", encoding="utf-8") as f:
+        json.dump(s, f, ensure_ascii=False, indent=2)
+    return token
+
+
+# ---------------------------------------------------------------- 待办
+
+def build_todos(state):
+    """只放「不处理就卡住」的东西。按级别排：red 先。"""
+    todos = []
+    for t in state["选题"]:
+        if t.get("状态") in ("已用", "废弃"):
+            continue
+        missing = [f for f in CONFLICT_FIELDS if is_blank(t.get(f))]
+        if missing:
+            todos.append({
+                "级别": "red",
+                "类型": "选题冲突不完整",
+                "标题": "%s %s" % (t["id"], (t.get("标题候选") or "").split("|")[0].strip()),
+                "说明": "缺：" + " / ".join(missing) + "。填不全就别往下走，AI 写出来是空的。",
+                "目标": {"kind": "选题", "id": t["id"]},
+            })
+
+    for d in state["稿件"]:
+        if d.get("状态") == "待确认":
+            todos.append({
+                "级别": "red",
+                "类型": "稿件待你过目",
+                "标题": "%s %s" % (d["id"], d.get("选题") or ""),
+                "说明": "AI 改完了，等你看一眼。",
+                "目标": {"kind": "稿件", "id": d["id"]},
+            })
+
+    for sp in state["灵感"]:
+        if sp.get("状态") == "未孵化":
+            age = days_since(sp.get("捕获"))
+            if age >= 3:
+                todos.append({
+                    "级别": "gray",
+                    "类型": "灵感搁着没动",
+                    "标题": sp.get("原话") or sp["id"],
+                    "说明": "%d 天了，要么孵化成选题，要么标废弃。" % age,
+                    "目标": {"kind": "灵感", "id": sp["id"]},
+                })
+
+    stale = [p for p in state["投放"] if days_since(p.get("更新于")) >= 7]
+    if stale:
+        todos.append({
+            "级别": "gray",
+            "类型": "投放数据该刷了",
+            "标题": "%d 条投放超过 7 天没更新" % len(stale),
+            "说明": "发布 7 天后的数据才有参考价值，更久的数据意义不大。",
+            "目标": {"kind": "数据", "id": ""},
+        })
+
+    todos.sort(key=lambda x: 0 if x["级别"] == "red" else 1)
+    return todos
+
+
+# ---------------------------------------------------------------- 统计
 
 def week_start(day):
     return day - timedelta(days=day.weekday())
 
 
-def summarize(rows):
+def brief(rows):
     return {
         "篇数": len(rows),
         "阅读": sum(r["阅读"] for r in rows),
@@ -232,98 +359,354 @@ def summarize(rows):
     }
 
 
-def stats():
-    rows = read_published()
+def build_stats(state):
+    rows = state["投放"]
     today = date.today()
     monday = week_start(today)
     sunday = monday + timedelta(days=6)
+    goal = int(settings().get("每周目标") or 5)
 
     def between(a, b):
-        return [r for r in rows if a.isoformat() <= r["日期"] <= b.isoformat()]
+        return [r for r in rows if a.isoformat() <= r["发布日"] <= b.isoformat()]
 
-    goal = WEEK_GOAL
-    if os.path.isfile(SETTINGS):
-        try:
-            with open(SETTINGS, "r", encoding="utf-8-sig") as f:
-                goal = int(json.load(f).get("每周目标") or goal)
-        except Exception:
-            pass
+    cur = brief(between(monday, sunday))
+    prev = brief(between(monday - timedelta(days=7), sunday - timedelta(days=7)))
 
-    this_week = between(monday, sunday)
-    last_week = between(monday - timedelta(days=7), sunday - timedelta(days=7))
-    cur, prev = summarize(this_week), summarize(last_week)
+    acc_map = dict((a["id"], a) for a in state["账号"])
 
-    # 本周七天，缺的那天补 0，图表才有完整的七个柱子
-    daily = []
-    for i in range(7):
-        d = monday + timedelta(days=i)
-        hit = [r for r in this_week if r["日期"] == d.isoformat()]
-        s = summarize(hit)
-        daily.append({
-            "日期": d.isoformat(),
-            "周": WEEKDAYS[i],
-            "篇数": s["篇数"],
-            "阅读": s["阅读"],
-            "互动": s["互动"],
-            "今天": d == today,
-            "未到": d > today,
+    by_acc = {}
+    for r in rows:
+        a = acc_map.get(r["账号"], {})
+        key = r["账号"] or "未归类"
+        node = by_acc.setdefault(key, {
+            "账号": key, "平台": a.get("平台", "未标记"),
+            "账号名": a.get("账号名", key), "篇数": 0,
+            "阅读": 0, "互动": 0, "涨粉": 0,
         })
+        node["篇数"] += 1
+        node["阅读"] += r["阅读"]
+        node["互动"] += r["互动"]
+        node["涨粉"] += r["涨粉"]
+    acc_list = sorted(by_acc.values(), key=lambda x: x["阅读"], reverse=True)
+    for a in acc_list:
+        a["互动率"] = round(a["互动"] * 100.0 / a["阅读"], 2) if a["阅读"] else 0.0
 
-    # 近 6 周，从旧到新
+    by_platform = {}
+    for a in acc_list:
+        p = by_platform.setdefault(a["平台"], {
+            "平台": a["平台"], "篇数": 0, "阅读": 0, "互动": 0, "涨粉": 0})
+        for k in ("篇数", "阅读", "互动", "涨粉"):
+            p[k] += a[k]
+    plat_list = sorted(by_platform.values(), key=lambda x: x["阅读"], reverse=True)
+    for p in plat_list:
+        p["互动率"] = round(p["互动"] * 100.0 / p["阅读"], 2) if p["阅读"] else 0.0
+
     weeks = []
     for i in range(5, -1, -1):
         m = monday - timedelta(days=7 * i)
-        sel = between(m, m + timedelta(days=6))
-        s = summarize(sel)
-        weeks.append({
-            "开始": m.isoformat(),
-            "标签": "%d/%d" % (m.month, m.day),
-            "本周": i == 0,
-            **s,
-        })
+        s = brief(between(m, m + timedelta(days=6)))
+        weeks.append({"开始": m.isoformat(), "标签": "%d/%d" % (m.month, m.day),
+                      "本周": i == 0, **s})
 
-    # 平台汇总
-    platforms = {}
-    for r in rows:
-        p = platforms.setdefault(r["平台"], {"平台": r["平台"], "篇数": 0, "阅读": 0,
-                                            "点赞": 0, "收藏": 0, "评论": 0, "互动": 0, "涨粉": 0})
-        for k in ("篇数", "阅读", "点赞", "收藏", "评论", "互动", "涨粉"):
-            p[k] += r[k] if k != "篇数" else 1
-    plist = sorted(platforms.values(), key=lambda p: p["阅读"], reverse=True)
-    for p in plist:
-        p["互动率"] = round(p["互动"] * 100.0 / p["阅读"], 2) if p["阅读"] else 0.0
+    daily = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        s = brief([r for r in between(monday, sunday) if r["发布日"] == d.isoformat()])
+        daily.append({"日期": d.isoformat(), "周": WEEKDAYS[i], "今天": d == today,
+                      "未到": d > today, **s})
 
     best = max(rows, key=lambda r: r["阅读"]) if rows else None
 
     return {
-        "ok": True,
         "今天": today.isoformat(),
         "本周": {
-            "起": monday.isoformat(),
-            "止": sunday.isoformat(),
+            "起": monday.isoformat(), "止": sunday.isoformat(),
             "标签": "%d/%d – %d/%d" % (monday.month, monday.day, sunday.month, sunday.day),
             "第几天": today.weekday() + 1,
             "剩几天": (sunday - today).days,
             "目标": goal,
             "完成率": round(min(cur["篇数"] * 100.0 / goal, 999), 1) if goal else 0,
             **cur,
-            "上周篇数": prev["篇数"],
-            "上周阅读": prev["阅读"],
-            "上周互动": prev["互动"],
+            "上周篇数": prev["篇数"], "上周阅读": prev["阅读"], "上周互动": prev["互动"],
         },
         "每日": daily,
         "周趋势": weeks,
-        "平台": plist,
-        "明细": rows,
-        "累计": summarize(rows),
+        "按账号": acc_list,
+        "按平台": plat_list,
+        "累计": brief(rows),
         "最佳": best,
-        "服务时间": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "有数据": len(rows) > 0,
     }
 
 
-# ---------- HTTP ----------
+# ---------------------------------------------------------------- 状态汇总
+
+def build_state():
+    state = {}
+    for kind in ("身份", "账号", "灵感", "选题", "稿件"):
+        state[kind] = list_entity(kind)
+    state["投放"] = read_pubs()
+
+    # 身份默认取设置里指定的那一个
+    want = settings().get("身份") or ""
+    ident = None
+    for p in state["身份"]:
+        if p["id"] == want:
+            ident = p
+            break
+    if ident is None and state["身份"]:
+        ident = state["身份"][0]
+
+    # 补一层关联显示用的小字段，省得前端自己 join
+    draft_map = dict((d["id"], d) for d in state["稿件"])
+    topic_map = dict((t["id"], t) for t in state["选题"])
+    acc_map = dict((a["id"], a) for a in state["账号"])
+
+    for d in state["稿件"]:
+        t = topic_map.get(d.get("选题"), {})
+        d["选题标题"] = (t.get("标题候选") or "").split("|")[0].strip() or d.get("选题", "")
+        d["字数"] = len(re.sub(r"\s", "", (d.get("正文") or ""))) or 0
+
+    for t in state["选题"]:
+        t["稿件"] = [d["id"] for d in state["稿件"] if d.get("选题") == t["id"]]
+        t["缺冲突"] = [f for f in CONFLICT_FIELDS if is_blank(t.get(f))]
+
+    for p in state["投放"]:
+        a = acc_map.get(p["账号"], {})
+        p["平台"] = a.get("平台", "未标记")
+        p["账号名"] = a.get("账号名", p["账号"] or "未归类")
+        if not p.get("标题") or p["标题"] == "未命名":
+            d = draft_map.get(p["稿件"], {})
+            p["标题"] = d.get("选题标题") or p["标题"]
+        p["新鲜"] = days_since(p.get("更新于")) <= 7
+
+    state["当前身份"] = ident
+    state["待办"] = build_todos(state)
+    state["统计"] = build_stats(state)
+
+    conf = local_conf()
+    model = settings().get("模型") or {}
+    state["AI"] = {
+        "可用": bool(conf.get("api_key")),
+        "模型名": conf.get("模型名") or model.get("模型名") or "",
+        "接口": conf.get("接口") or model.get("接口") or "",
+    }
+    state["书签令牌"] = ensure_bookmark_token()
+    state["服务时间"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return state
+
+
+# ---------------------------------------------------------------- AI
+
+BASE_RULES = """你在帮「{name}」做自媒体内容。他一个人管多个平台账号，你只服务他一个人。
+
+硬规则，违反任何一条这次回答就作废：
+
+1. 不许编。稿件里的经历、数字、细节只能来自他给的素材。素材里没有的，你来问他，不许自己造。
+2. 不许客套。不要"好的""明白了""这是一个很好的问题"。直接说事。
+3. 不许一次给太多。一次只推进一步，等他回。
+4. 说人话。短句。不用"赋能、闭环、抓手、底层逻辑、落地"这类词。
+5. 你改不动文件。想改什么，在回答最后输出一段 json 代码块，格式：
+```json
+{{"写入":[{{"kind":"选题","id":"tp-001","字段":{{"反方":"改后的内容"}}}}]}}
+```
+只能改「灵感/选题/稿件」三类，字段名必须是文件里已有的。正文用 "正文" 这个键。
+没有要改的就不要输出这段 json。
+
+他的人设：
+{persona}
+"""
+
+TASK_PROMPT = {
+    "选题": """现在在打磨一条选题。
+
+选题文件：
+{topic}
+
+你的任务：把「冲突」问硬。正方和反方都必须站得住脚，包括他自己站的那一边。
+具体做法：先指出四条里哪条最空，然后只问一个问题，逼他补。不要一口气问五个问题。""",
+
+    "稿件": """现在在改一篇稿。
+
+稿件全文：
+{draft}
+
+选题背景：
+{topic}
+
+他的人设和平台要求见上。你的任务：按他的意见改，或者指出这稿哪里不像他。
+每次改完，用一句话说明你动了哪里。""",
+
+    "灵感": """现在在孵化一条灵感。
+
+灵感：
+{spark}
+
+你的任务：判断这条能不能变成选题。能，就帮他把「核心冲突」逼出来（正方/反方/我站/我可能错在哪）。
+不能，就直接说不能，并说明为什么。别硬凑。""",
+
+    "全局": """现在没有选中具体对象，他在跟你闲聊或问整体情况。
+
+当前盘子：
+- 选题 {n_topic} 条，其中 {n_bad} 条冲突没填全
+- 稿件 {n_draft} 篇
+- 灵感 {n_spark} 条
+- 近期投放 {n_pub} 条
+
+先回答他的问题。如果他说不出想干什么，你就从上面这些里挑一件最该做的，直接说"我们先弄这个"，别问"你想做什么"。""",
+}
+
+
+def build_messages(state, kind, item_id, history):
+    ident = state["当前身份"] or {}
+    persona_parts = []
+    if ident:
+        for key in ("名称", "定位", "读者", "语言风格", "偏爱话题", "禁区", "锚点习惯"):
+            if ident.get(key):
+                persona_parts.append("- %s：%s" % (key, ident[key]))
+        if ident.get("正文"):
+            persona_parts.append("\n" + ident["正文"])
+    system = BASE_RULES.format(name=ident.get("名称", "他"),
+                               persona=("\n".join(persona_parts) or "（还没写人设）"))
+
+    topic_map = dict((t["id"], t) for t in state["选题"])
+
+    def render(item):
+        if not item:
+            return "（没找到这个文件）"
+        head = []
+        for k in ORDER.get(kind, []):
+            if item.get(k):
+                head.append("%s: %s" % (k, item[k]))
+        return "\n".join(head) + "\n\n" + (item.get("正文") or "")
+
+    item = None
+    for x in state.get(kind, []):
+        if x["id"] == item_id:
+            item = x
+            break
+
+    if kind == "选题":
+        task = TASK_PROMPT["选题"].format(topic=render(item))
+    elif kind == "稿件":
+        task = TASK_PROMPT["稿件"].format(
+            draft=render(item), topic=render(topic_map.get((item or {}).get("选题"))))
+    elif kind == "灵感":
+        task = TASK_PROMPT["灵感"].format(spark=render(item))
+    else:
+        bad = sum(1 for t in state["选题"] if t.get("缺冲突"))
+        task = TASK_PROMPT["全局"].format(
+            n_topic=len(state["选题"]), n_bad=bad,
+            n_draft=len(state["稿件"]), n_spark=len(state["灵感"]),
+            n_pub=len(state["投放"]))
+
+    msgs = [{"role": "system", "content": system + "\n\n" + task}]
+    for m in (history or [])[-12:]:
+        role = "assistant" if m.get("role") == "assistant" else "user"
+        content = str(m.get("content") or "").strip()
+        if content:
+            msgs.append({"role": role, "content": content})
+    return msgs
+
+
+def model_endpoint():
+    conf = local_conf()
+    model = settings().get("模型") or {}
+    base = (conf.get("接口") or model.get("接口") or "https://api.deepseek.com").rstrip("/")
+    name = conf.get("模型名") or model.get("模型名") or "deepseek-chat"
+    if base.endswith("/chat/completions"):
+        url = base
+    elif "/v1" in base:
+        url = base + "/chat/completions"
+    else:
+        url = base + "/v1/chat/completions"
+    return url, name, conf.get("api_key") or "", conf.get("代理") or ""
+
+
+def stream_model(messages):
+    """调模型，逐段吐字。生成器。"""
+    url, name, key, proxy = model_endpoint()
+    if not key:
+        raise ValueError("还没有 API Key。在根目录建一个 本地配置.json，写 "
+                         '{"api_key": "sk-..."}，然后重启服务。')
+
+    body = json.dumps({
+        "model": name, "messages": messages,
+        "stream": True, "temperature": 0.7,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(url, data=body, method="POST", headers={
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + key,
+        "Accept": "text/event-stream",
+    })
+
+    # 环境里的 http_proxy 可能是内部代理，连不通模型接口。配了代理就用配的。
+    if proxy:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    else:
+        opener = urllib.request.build_opener()
+
+    try:
+        resp = opener.open(req, timeout=120)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        raise ValueError("模型接口返回 %s：%s" % (exc.code, detail))
+    except urllib.error.URLError as exc:
+        raise ValueError("连不上模型接口（%s）。如果是网络问题，在 本地配置.json 里加 "
+                         '"代理": "http://127.0.0.1:7890" 再试。' % exc.reason)
+
+    for raw in resp:
+        line = raw.decode("utf-8", "replace").strip()
+        if not line or not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if payload == "[DONE]":
+            break
+        try:
+            obj = json.loads(payload)
+        except ValueError:
+            continue
+        choices = obj.get("choices") or []
+        if not choices:
+            continue
+        piece = (choices[0].get("delta") or {}).get("content") or ""
+        if piece:
+            yield piece
+
+
+WRITE_BLOCK = re.compile(r"```json\s*(\{[\s\S]*?\"写入\"[\s\S]*?\})\s*```")
+
+
+def extract_writes(text):
+    """从回答里捞出「写入」指令。捞不到就返回空列表。"""
+    out = []
+    for m in WRITE_BLOCK.finditer(text or ""):
+        try:
+            obj = json.loads(m.group(1))
+        except ValueError:
+            continue
+        for w in obj.get("写入") or []:
+            if not isinstance(w, dict):
+                continue
+            kind = str(w.get("kind") or "").strip()
+            item_id = str(w.get("id") or "").strip()
+            if kind not in ("灵感", "选题", "稿件") or not item_id:
+                continue
+            fields = w.get("字段") or {}
+            if not isinstance(fields, dict):
+                fields = {}
+            out.append({"kind": kind, "id": item_id,
+                        "字段": dict((str(k), str(v)) for k, v in fields.items())})
+    return out
+
+
+# ---------------------------------------------------------------- HTTP
 
 class Handler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
 
@@ -339,10 +722,27 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def _page(self):
-        path = os.path.join(ROOT, PAGE)
+    def _body(self):
+        size = int(self.headers.get("Content-Length") or 0)
+        if not size:
+            return {}
+        return json.loads(self.rfile.read(size).decode("utf-8") or "{}")
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        try:
+            if path == "/api/state":
+                return self._json({"ok": True, **build_state()})
+            if path in ("/", "/index.html"):
+                return self._serve("index.html")
+        except Exception as exc:
+            return self._json({"ok": False, "error": str(exc)}, 500)
+        return super().do_GET()
+
+    def _serve(self, name):
+        path = os.path.join(ROOT, name)
         if not os.path.isfile(path):
-            return self._json({"ok": False, "error": "找不到 %s" % PAGE}, 404)
+            return self._json({"ok": False, "error": "找不到 %s" % name}, 404)
         with open(path, "rb") as f:
             raw = f.read()
         self.send_response(200)
@@ -352,34 +752,81 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def do_GET(self):
-        path = urlparse(self.path).path
-        if path == "/api/board":
-            return self._json(board())
-        if path == "/api/stats":
-            return self._json(stats())
-        if path in ("/", "/index.html"):
-            return self._page()
-        return super().do_GET()
-
     def do_POST(self):
-        if urlparse(self.path).path != "/api/confirm":
-            return self._json({"ok": False, "error": "未知接口"}, 404)
+        path = urlparse(self.path).path
         try:
-            size = int(self.headers.get("Content-Length") or 0)
-            payload = json.loads(self.rfile.read(size).decode("utf-8") or "{}")
-            return self._json(confirm(payload))
+            if path == "/api/write":
+                p = self._body()
+                item = save_entity(p.get("kind", ""), p.get("id", ""),
+                                   p.get("字段") or None, p.get("正文"))
+                return self._json({"ok": True, "item": item})
+            if path == "/api/ingest":
+                p = self._body()
+                if str(p.get("令牌") or "") != ensure_bookmark_token():
+                    return self._json({"ok": False, "error": "令牌不对"}, 403)
+                return self._json({"ok": True, "投放": add_pub(p)})
+            if path == "/api/pub":
+                return self._json({"ok": True, "投放": add_pub(self._body())})
+            if path == "/api/chat":
+                return self._chat()
         except Exception as exc:
             return self._json({"ok": False, "error": str(exc)}, 400)
+        return self._json({"ok": False, "error": "未知接口"}, 404)
+
+    def _chat(self):
+        """SSE 流式。不设 Content-Length，写完关连接。"""
+        p = self._body()
+        kind = str(p.get("kind") or "全局")
+        item_id = str(p.get("id") or "")
+        history = p.get("messages") or []
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        def emit(obj):
+            self.wfile.write(("data: " + json.dumps(obj, ensure_ascii=False) + "\n\n")
+                             .encode("utf-8"))
+            self.wfile.flush()
+
+        full = ""
+        try:
+            state = build_state()
+            messages = build_messages(state, kind, item_id, history)
+            for piece in stream_model(messages):
+                full += piece
+                emit({"delta": piece})
+            emits = extract_writes(full)
+            clean = WRITE_BLOCK.sub("", full).strip()
+            if emits:
+                emit({"修正": clean})
+            emit({"done": True, "写入": emits})
+        except Exception as exc:
+            emit({"error": str(exc)})
+        try:
+            self.close_connection = True
+        except Exception:
+            pass
 
 
 def main():
-    os.makedirs(CONTENT, exist_ok=True)
+    for d in DIRS.values():
+        os.makedirs(d, exist_ok=True)
+    if not os.path.isfile(PUB_CSV):
+        write_pubs([])
+    ensure_bookmark_token()
+
     url = "http://127.0.0.1:%d/" % PORT
-    print("\n  内容流水线已启动")
+    conf = local_conf()
+    print("\n  内容矩阵控制台已启动")
     print("  地址：%s" % url)
-    print("  数据：%s" % CONTENT)
+    print("  数据：%s" % DATA)
+    print("  AI：%s" % ("已配置 " + (conf.get("模型名") or "") if conf.get("api_key")
+                        else "未配置（本地配置.json 里还没有 api_key）"))
     print("  关闭这个窗口即停止服务\n")
+
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     try:

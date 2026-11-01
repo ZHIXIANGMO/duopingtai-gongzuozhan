@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>矩阵 · 内容矩阵</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .row-plat{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:stretch;
+    padding:14px 0;border-bottom:1px solid var(--line)}
+  .row-plat:last-child{border-bottom:0}
+  .row-lab{padding-top:2px}
+  .row-lab b{font-size:12px;font-weight:600}
+  .row-lab span{display:block;font-size:9.5px;color:#B5B5B5;margin-top:4px;line-height:1.6}
+  .cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .who-head{display:flex;align-items:center;gap:11px;margin-bottom:16px}
+  .who-av{width:42px;height:42px;border-radius:14px;flex:none;
+    background:linear-gradient(135deg,#FFC2A6,#FF5A5F);display:grid;place-items:center;
+    color:#fff;font-size:17px;font-weight:600}
+  .who-t{font-size:15px;font-weight:600}
+  .who-s{font-size:10.5px;color:var(--mute);margin-top:3px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side"></aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb">矩阵 · <b id="topCount"></b></div>
+      <div class="top-right">
+        <div class="sync"><span id="syncDot" class="dot"></span><span id="syncText"></span></div>
+      </div>
+    </div>
+
+    <div id="who"></div>
+    <div id="grid"></div>
+
+    <div class="sec-head"><h2>怎么读这张表</h2></div>
+    <div class="card">
+      <div class="who-s" style="line-height:1.9;color:#7C7C7C">
+        一行是一个身份（人设），一格是一个真实存在的号。<br>
+        同一个身份在四个平台就是四个号，内容各自适配；同一个平台有两个身份，赛道不串味。<br>
+        空格子不是"缺"，是"还没开"。开号之前先想清楚：这个号跟已有的是不是抢同一批读者。
+      </div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="assets/app.js"></script>
+<script>
+let STATE = null;
+
+const PLATFORMS = ['小红书', '公众号', '抖音', 'B站'];
+
+function renderWho(){
+  const ident = STATE['当前身份'] || {};
+  const name = ident['名称'] || '未命名';
+  const pos = ident['定位'] || '';
+  const reader = ident['读者'] || '';
+
+  $('#who').innerHTML = `
+    <div class="who-head">
+      <div class="who-av">${esc(name.slice(0, 1))}</div>
+      <div>
+        <div class="who-t">${esc(name)}</div>
+        <div class="who-s">${esc(pos)}${pos && reader ? ' · ' : ''}${esc(reader)}</div>
+      </div>
+    </div>`;
+}
+
+function renderGrid(){
+  const accs = STATE['账号'] || [];
+  const stats = (STATE['统计'] || {})['按账号'] || [];
+  const byKey = {};
+  stats.forEach(s => byKey[s['账号']] = s);
+
+  const idents = STATE['身份'] || [];
+  const who = STATE['当前身份'] || {};
+
+  let html = '';
+  (idents.length ? idents : [who]).forEach(ident => {
+    if(!ident || !ident.id) return;
+    const mine = accs.filter(a => a['身份'] === ident.id);
+    html += `<div class="sec-head"><h2>${esc(ident['名称'] || '未命名')}</h2>
+      <span>${mine.length} 个号</span></div>`;
+
+    PLATFORMS.forEach(p => {
+      const cells = mine.filter(a => a['平台'] === p);
+      html += `<div class="row-plat">
+        <div class="row-lab"><b>${esc(p)}</b><span>${cells.length ? cells.length + ' 个号' : '未开'}</span></div>
+        <div class="cells">
+          ${cells.map(a => {
+            const s = byKey[a.id] || {};
+            return `<a class="mx-cell" href="data.html">
+              <div class="mx-name">${esc(a['账号名'] || a.id)}</div>
+              <div class="mx-sub">粉丝基线 ${fmt(a['粉丝基线'] || 0)} · ${esc(a['状态'] || '正常')}</div>
+              <div class="mx-nums">
+                <div><b class="num">${s['篇数'] || 0}</b><span>已投</span></div>
+                <div><b class="num">${fmt(s['阅读'] || 0)}</b><span>阅读</span></div>
+                <div><b class="num">${fmt(s['涨粉'] || 0)}</b><span>涨粉</span></div>
+              </div>
+            </a>`;
+          }).join('')}
+          ${cells.length < 2 ? `<div class="mx-cell empty">
+            <div class="mx-plat">还能开</div>
+            <div class="mx-sub" style="margin-top:4px">在 <b>数据/账号/</b> 里加一个 md，这个格子就填上了</div>
+          </div>` : ''}
+        </div>
+      </div>`;
+    });
+  });
+
+  $('#grid').innerHTML = html;
+  $('#topCount').textContent = accs.length + ' 个号 · ' + (STATE['身份'] || []).length + ' 个身份';
+}
+
+(async function init(){
+  STATE = await boot('matrix');
+  if(!STATE){ offlineBlock($('#grid')); return; }
+  renderWho();
+  renderGrid();
+})();
+</script>
+</body>
+</html>
