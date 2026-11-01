@@ -54,6 +54,7 @@
       <div class="form-row">
         <div class="field"><label>账号</label><select id="fAcc"></select></div>
         <div class="field"><label>发布日</label><input id="fDay" type="date"></div>
+        <div class="field" style="grid-column:span 2"><label>稿件</label><select id="fDraft"></select></div>
         <div class="field" style="grid-column:span 2"><label>标题</label><input id="fTitle" placeholder="这篇叫什么"></div>
         <div class="field"><label>阅读</label><input id="fRead" inputmode="numeric" placeholder="0"></div>
         <div class="field"><label>点赞</label><input id="fLike" inputmode="numeric" placeholder="0"></div>
@@ -210,8 +211,21 @@ function renderForm(){
   const accs = STATE['账号'] || [];
   $('#fAcc').innerHTML = accs.map(a =>
     `<option value="${esc(a.id)}">${esc(a['账号名'])} · ${esc(a['平台'])}</option>`).join('');
+
+  // 投放要挂回稿件，不然「这篇稿表现怎么样」永远查不出来
+  const drafts = (STATE['稿件'] || []).slice().reverse();
+  $('#fDraft').innerHTML = '<option value="">不挂稿件</option>' + drafts.map(d =>
+    `<option value="${esc(d.id)}">${esc(d.id)} · ${esc((d['选题标题'] || '').slice(0, 22))}</option>`).join('');
+
+  $('#fDraft').onchange = () => {
+    const d = drafts.find(x => x.id === $('#fDraft').value);
+    if(d && !$('#fTitle').value.trim()){
+      $('#fTitle').value = d['选题标题'] || d.id;
+    }
+  };
+
   if(!$('#fDay').value){
-    $('#fDay').value = new Date().toISOString().slice(0, 10);
+    $('#fDay').value = ymd(new Date());
   }
 }
 
@@ -225,6 +239,7 @@ async function addRow(){
     await postJSON('/api/pub', {
       '账号': $('#fAcc').value,
       '发布日': $('#fDay').value,
+      '稿件': $('#fDraft').value,
       '标题': title,
       '阅读': $('#fRead').value,
       '点赞': $('#fLike').value,

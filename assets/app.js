@@ -13,6 +13,15 @@ function esc(s){
   ));
 }
 
+/* 本地日期 YYYY-MM-DD。
+   别用 toISOString()：它按 UTC 算，东八区早上 8 点前会掉到前一天，
+   日历会整列错位、今天永远不高亮。 */
+function ymd(d){
+  const x = d || new Date();
+  const p = n => (n < 10 ? '0' : '') + n;
+  return x.getFullYear() + '-' + p(x.getMonth() + 1) + '-' + p(x.getDate());
+}
+
 function fmt(n){
   n = Number(n || 0);
   if(n >= 10000) return (n / 10000).toFixed(n >= 100000 ? 0 : 1) + '万';
@@ -41,6 +50,13 @@ function renderMd(text){
   });
   s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
   s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  // 链接：[文字](url) 和光秃秃的 url 都认
+  s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+    (m, text, url) => `<a href="${url}" target="_blank" rel="noopener">${text}</a>`);
+  s = s.replace(/(^|[\s（(>])(https?:\/\/[^\s<>"）)]+)/g, (m, pre, url) => {
+    const tail = url.length > 48 ? url.slice(0, 46) + '…' : url;
+    return `${pre}<a href="${url}" target="_blank" rel="noopener">${tail}</a>`;
+  });
   s = s.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
   s = s.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
 
@@ -85,6 +101,47 @@ function toast(msg){
   el.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('on'), 2400);
+}
+
+/* ---------- 行内新建 ---------- */
+/* 不弹窗，直接在列表顶上长一行输入框。回车建，ESC 撤。 */
+function inlineNew(host, opts){
+  opts = opts || {};
+  if(!host) return;
+  const old = host.querySelector(':scope > .inew');
+  if(old) old.remove();
+
+  const row = document.createElement('div');
+  row.className = 'inew';
+  row.innerHTML = `<input placeholder="${esc(opts.placeholder || '写个名字')}">
+    <button class="btn btn-sm btn-primary">建</button>
+    <button class="btn btn-sm" data-x>取消</button>`;
+
+  if(opts.where === 'end') host.appendChild(row); else host.prepend(row);
+
+  const input = row.querySelector('input');
+  input.focus();
+
+  const submit = async () => {
+    const v = input.value.trim();
+    if(!v) return;
+    input.disabled = true;
+    try{
+      await opts.onSubmit(v);
+      row.remove();
+    }catch(e){
+      toast(e.message || '没建成');
+      input.disabled = false;
+      input.focus();
+    }
+  };
+
+  row.querySelector('.btn-primary').addEventListener('click', submit);
+  row.querySelector('[data-x]').addEventListener('click', () => row.remove());
+  input.addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ e.preventDefault(); submit(); }
+    if(e.key === 'Escape') row.remove();
+  });
 }
 
 function setSync(kind, text){
@@ -158,7 +215,7 @@ function renderSide(state, active){
       </div>
     </div>
     <div class="nav">
-      ${item('work', 'index.html', '工作台',
+      ${item('work', 'index.html', '今天',
         '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h13"/></svg>', todos, todos > 0)}
       ${item('topics', 'topics.html', '选题',
         '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>', topics)}
@@ -350,8 +407,17 @@ async function applyWrites(writes){
   let ok = 0, fail = 0;
   for(const w of writes){
     try{
-      await postJSON('/api/write', {kind:w.kind, id:w.id, '字段': w['字段'] || {}});
-      ok++;
+      const fields = w['字段'] || {};
+      if(Object.keys(fields).length){
+        await postJSON('/api/write', {kind: w.kind, id: w.id, '字段': fields});
+        ok++;
+      }
+      if(w['正文'] && w.kind === '稿件'){
+        // 正文走小节接口：只换「## 正文」这一段，素材/配图/排版不会被抹掉
+        await postJSON('/api/section', {kind: '稿件', id: w.id, '小节': '正文', '内容': w['正文']});
+        ok++;
+      }
+      if(!Object.keys(fields).length && !(w['正文'] && w.kind === '稿件')) fail++;
     }catch(e){ fail++; }
   }
   return {ok, fail};
@@ -361,4 +427,65 @@ async function applyWrites(writes){
 function autoGrow(el){
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 190) + 'px';
+}
+
+/* ---------- 四阶段 ---------- */
+const STAGES = ['讨论', '正文', '配图', '排版'];
+const STAGE_LABEL = {
+  '讨论': '选题与讨论', '正文': '正文', '配图': '配图', '排版': '排版与发布'
+};
+
+function stageAt(d){
+  const i = STAGES.indexOf((d || {})['阶段']);
+  return i < 0 ? 0 : i;
+}
+
+/* 一条稿件的进度条。四格，走过的填红，待重做的描虚线。 */
+function stageBar(d, opts){
+  opts = opts || {};
+  const here = stageAt(d);
+  const redo = d['待重做'] || [];
+  const has = d['有产物'] || [];
+
+  const segs = STAGES.map((s, i) => {
+    const cls = ['sg'];
+    if(i < here) cls.push('done');
+    if(i === here) cls.push('now');
+    if(redo.indexOf(s) >= 0) cls.push('redo');
+    if(has.indexOf(s) >= 0) cls.push('has');
+    const tip = STAGE_LABEL[s] + (redo.indexOf(s) >= 0 ? ' · 待重做' : '');
+    const name = opts.labels ? `<b class="sgl">${esc(STAGE_LABEL[s])}</b>` : '';
+    return `<button type="button" class="${cls.join(' ')}" data-s="${s}" title="${esc(tip)}" aria-label="${esc(tip)}"><i></i>${name}</button>`;
+  }).join('');
+
+  let label = '';
+  if(opts.label !== false){
+    label = opts.labels
+      ? `<div class="sn">第 ${here + 1} 格 / 共 ${STAGES.length} 格 · 点任意一格切过去${redo.length ? ' · <b>待重做 ' + redo.length + '</b>' : ''}</div>`
+      : `<div class="sn">${esc(STAGE_LABEL[STAGES[here]] || '')} · ${here + 1}/${STAGES.length}${redo.length ? ' · 待重做 ' + redo.length : ''}</div>`;
+  }
+
+  return `<div class="stage ${opts.labels ? 'lbl' : ''} ${opts.cls || ''}" data-id="${esc(d.id || '')}">
+    <div class="segs">${segs}</div>
+    ${label}
+  </div>`;
+}
+
+/* 点进度条 → 切阶段。往回走时由服务端把下游产物标待重做。 */
+async function setStage(id, stage, note){
+  const r = await postJSON('/api/stage', {kind: '稿件', id, '阶段': stage, '说明': note || ''});
+  return r.item;
+}
+
+/* 给容器里的每格绑点击。handler(stage, index, here) */
+function bindStage(host, d, handler){
+  if(!host || !handler) return;
+  const here = stageAt(d);
+  host.querySelectorAll('.stage .sg').forEach(btn => {
+    btn.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      handler(btn.dataset.s, STAGES.indexOf(btn.dataset.s), here);
+    });
+  });
 }

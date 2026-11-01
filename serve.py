@@ -7,6 +7,7 @@
 零依赖：只用标准库。只监听 127.0.0.1。
 """
 
+import base64
 import csv
 import json
 import os
@@ -20,7 +21,7 @@ import urllib.request
 import webbrowser
 from datetime import date, datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -35,6 +36,7 @@ DIRS = {
     "稿件": os.path.join(DATA, "稿件"),
 }
 PUB_CSV = os.path.join(DATA, "投放.csv")
+ASSET_DIR = os.path.join(DATA, "素材")
 SETTINGS = os.path.join(DATA, "设置.json")
 LOCAL_CONF = os.path.join(ROOT, "本地配置.json")
 
@@ -49,8 +51,30 @@ ORDER = {
     "灵感": ["id", "来源", "原话", "捕获", "关联身份", "状态"],
     "选题": ["id", "来自灵感", "标题候选", "正方", "反方", "我站", "我可能错在哪",
            "目标身份", "目标平台", "优先级", "状态", "创建"],
-    "稿件": ["id", "选题", "身份", "版本", "状态", "字数", "创建", "更新"],
+    "稿件": ["id", "选题", "身份", "版本", "阶段", "配图形式", "排版", "重做",
+           "字数", "创建", "更新"],
 }
+
+# 四阶段流水线。顺序就是进度条的格子顺序，改这里，前端跟着变。
+# 复盘不在这里：数据在数据页看，稿件只走到「发出去」为止。
+STAGES = ["讨论", "正文", "配图", "排版"]
+PLATFORMS = ["小红书", "公众号", "抖音", "B站"]
+STAGE_LABEL = {
+    "讨论": "选题与讨论",
+    "正文": "正文",
+    "配图": "配图",
+    "排版": "排版与发布",
+}
+# 每个阶段对应的正文小节。退回去改正文，后面这些小节就要重做。
+STAGE_SECTION = {"配图": "配图", "排版": "排版"}
+# 旧稿件的「状态」映射到阶段。只在读的时候兜底，不动老文件。
+LEGACY_STAGE = {"构思": "讨论", "初稿": "正文", "打磨": "正文", "待审": "正文",
+                "待确认": "正文", "定稿": "排版", "复盘": "排版"}
+# 配图形式：公众号图 / 小红书图 / 不配图。默认公众号。
+IMAGE_MODES = ["公众号", "小红书", "不配图"]
+
+LOG_CSV = os.path.join(DATA, "日志.csv")
+LOG_FIELDS = ["时间", "日期", "类型", "对象", "动作", "备注"]
 
 # 人设正文的小节，顺序固定。前端按这个渲染，写回时按这个重排。
 PERSONA_SECTIONS = ["这个人是谁", "要传递什么", "说话方式", "模仿样例",
@@ -141,6 +165,18 @@ def save_entity(kind, item_id, fields=None, body=None):
             meta[k] = "" if v is None else str(v)
     if kind == "稿件":
         meta["更新"] = date.today().isoformat()
+        # 正文一改，已经做出来的阶段产物就对不上了，标待重做（不马上删，留着给人看）
+        if body is not None and (body or "") != (old_body or ""):
+            here = stage_of(meta)
+            secs = sections_of(body)
+            redo = redo_list(meta)
+            for s in STAGES[STAGES.index(here):]:
+                if s not in redo and has_product(meta, secs, s):
+                    redo.append(s)
+            if redo:
+                meta["重做"] = ",".join(redo)
+                append_log("正文", item_id, "改了正文",
+                           "；".join(STAGE_LABEL.get(x, x) for x in redo) + " 待重做")
     snapshot(path, kind)
     write_md(path, meta, old_body if body is None else body, kind)
 
@@ -171,8 +207,9 @@ def rewrite_section(body, section, text):
     """只替换一个小节，别的小节原样留着。缺这个小节就按固定顺序插进去。"""
     head, blocks = [], []
     for line in (body or "").splitlines():
-        if line.startswith("## "):
-            blocks.append([line[3:].strip(), []])
+        name = line[3:].strip() if line.startswith("## ") else None
+        if name is not None and name in KNOWN_SECTIONS:
+            blocks.append([name, []])
         elif blocks:
             blocks[-1][1].append(line)
         else:
@@ -225,13 +262,388 @@ def save_section(kind, item_id, section, text):
         raise ValueError("找不到文件：%s" % path)
 
     meta, old_body = parse_md(path)
+    if kind == "稿件":
+        # 重新写了某一阶段的产物，这一格就不再是「待重做」了
+        meta["更新"] = date.today().isoformat()
+        redo = redo_list(meta)
+        if str(section).strip() in redo:
+            redo.remove(str(section).strip())
+            meta["重做"] = ",".join(redo)
+        # 改的是正文：后面做过的配图/排版就对不上了，跟 save_entity 一条规矩
+        if str(section).strip() == "正文":
+            before = sections_of(old_body).get("正文") or ""
+            if text.strip() != before.strip():
+                here = stage_of(meta)
+                for s in STAGES[STAGES.index(here) + 1:]:
+                    name = STAGE_SECTION.get(s)
+                    if name and s not in redo and has_product(meta, sections_of(old_body), s):
+                        redo.append(s)
+                if redo:
+                    meta["重做"] = ",".join(redo)
+                    append_log("正文", item_id, "改了正文",
+                               "；".join(STAGE_LABEL.get(x, x) for x in redo) + " 待重做")
+        append_log("产物", item_id, "写了「%s」" % str(section).strip(), "")
     snapshot(path, kind)
-    write_md(path, meta, rewrite_section(old_body, str(section).strip(),
-                                         flatten_heads(text)), kind)
+    # 只有人设的小节是「## 标题」式排版，稿件的小节里 # 就是正经 Markdown 标题，别压
+    content = flatten_heads(text) if kind == "身份" else text
+    write_md(path, meta, rewrite_section(old_body, str(section).strip(), content), kind)
 
     fresh, fresh_body = parse_md(path)
     fresh["正文"] = fresh_body
     return fresh
+
+
+# ---------------------------------------------------------------- 五阶段
+
+# 正文里只有这些 ## 才算小节边界。别的一律当内容——
+# 否则正文中间写一句「## 早上」，整篇文章就会被切成两半，还不报错。
+KNOWN_SECTIONS = ("素材", "正文", "这版改了什么", "人工意见", "配图", "排版", "复盘",
+                  "必须写进去的细节")
+
+
+def sections_of(body):
+    """把正文按 ## 切成 {小节名: 内容}。用来判断某个阶段的产物有没有做。"""
+    out, cur, buf = {}, None, []
+    for line in (body or "").splitlines():
+        name = line[3:].strip() if line.startswith("## ") else None
+        if name is not None and name in KNOWN_SECTIONS:
+            if cur is not None:
+                out[cur] = "\n".join(buf).strip()
+            cur, buf = name, []
+        elif cur is not None:
+            buf.append(line)
+        elif name is not None:
+            # 开头就是未知的 ##，别丢，当内容留着
+            buf.append(line)
+    if cur is not None:
+        out[cur] = "\n".join(buf).strip()
+    return out
+
+
+def has_product(meta, secs, stage):
+    """这一格到底做没做过。
+    配图和排版不靠小节记：配图写 `配图形式` 字段，排版写 `排版` 字段。
+    只看 ## 小节的话，这两格永远是「没产物」，退回时也就永远不提示待重做。"""
+    if stage == "配图":
+        return bool(str(meta.get("配图形式") or "").strip()
+                    or (secs.get("配图") or "").strip())
+    if stage == "排版":
+        return bool(str(meta.get("排版") or "").strip()
+                    or (secs.get("排版") or "").strip())
+    name = STAGE_SECTION.get(stage)
+    return bool(name and (secs.get(name) or "").strip())
+
+
+def stage_of(item):
+    """读稿件的阶段。老文件可能写着旧名字（待审/复盘），按映射兜底，不动老文件。"""
+    s = str(item.get("阶段") or "").strip()
+    if s in STAGES:
+        return s
+    if s in LEGACY_STAGE:
+        return LEGACY_STAGE[s]
+    return LEGACY_STAGE.get(str(item.get("状态") or "").strip(), "讨论")
+
+
+def redo_list(item):
+    """标了待重做的阶段。逗号分号都认。"""
+    raw = str(item.get("重做") or "").replace("，", ",").replace("、", ",")
+    return [x.strip() for x in raw.split(",") if x.strip() in STAGES]
+
+
+def archive_section(item_id, stage, text):
+    """作废的产物不删，挪进 .历史/作废，以后想捞还能捞。"""
+    d = os.path.join(DATA, ".历史", "作废")
+    try:
+        os.makedirs(d, exist_ok=True)
+        name = "%s.%s.%s.md" % (item_id, stage, datetime.now().strftime("%Y%m%d-%H%M%S"))
+        with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+            f.write("## %s\n\n%s\n" % (STAGE_SECTION.get(stage, stage), text))
+        return os.path.join(".历史", "作废", name)
+    except OSError:
+        return ""
+
+
+def advance_stage(kind, item_id, target, note=""):
+    """把稿件推到某个阶段。
+
+    往回走：这一段之后已经做出来的产物标「待重做」，内容先留着给人看。
+    再往前走回到那一格：标过待重做的产物挪进 .历史/作废，小节清空，重新开。
+    """
+    if kind != "稿件":
+        raise ValueError("只有稿件有阶段")
+    target = str(target or "").strip()
+    if target not in STAGES:
+        raise ValueError("没有这个阶段：%s" % target)
+    path = os.path.join(DIRS["稿件"], "%s.md" % item_id)
+    if not os.path.isfile(path):
+        raise ValueError("找不到稿件：%s" % item_id)
+
+    meta, body = parse_md(path)
+    cur = stage_of(meta)
+    ci, ti = STAGES.index(cur), STAGES.index(target)
+    redo = redo_list(meta)
+    secs = sections_of(body)
+    events = []
+
+    if ti < ci:
+        for s in STAGES[ti + 1:]:
+            if s not in redo and has_product(meta, secs, s):
+                redo.append(s)
+        if redo:
+            names = [STAGE_LABEL.get(x, x) for x in STAGES if x in redo]
+            events.append("%s 待重做" % "、".join(names))
+    elif ti > ci:
+        for s in STAGES[ci:ti + 1]:
+            if s not in redo:
+                continue
+            name = STAGE_SECTION.get(s)
+            old = (secs.get(name) or "").strip() if name else ""
+            if old:
+                archive_section(item_id, s, old)
+            if name:
+                body = rewrite_section(body, name, "")
+            # 配图和排版的产物记在字段上，重开时一起清掉，否则「重做」等于没做
+            if s == "配图":
+                meta.pop("配图形式", None)
+            if s == "排版":
+                meta.pop("排版", None)
+            events.append("%s 作废重开" % STAGE_LABEL.get(s, s))
+            redo.remove(s)
+        skipped = [s for s in STAGES[ci + 1:ti] if s not in redo]
+        if skipped:
+            events.append("跳过 %s" % "、".join(skipped))
+
+    meta["阶段"] = target
+    meta["重做"] = ",".join(redo)
+    meta["更新"] = date.today().isoformat()
+    meta.pop("状态", None)  # 阶段接管了，旧的别留在文件里
+    snapshot(path, "稿件")
+    write_md(path, meta, body, "稿件")
+    append_log("阶段", item_id, "%s → %s" % (cur, target),
+               note or "；".join(events))
+
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    fresh["阶段"] = target
+    return fresh
+
+
+# ---------------------------------------------------------------- 开稿
+
+DRAFT_TEMPLATE = """## 素材
+
+## 正文
+
+## 这版改了什么
+
+v1：从选题 {topic} 开的新稿。
+
+## 人工意见
+
+## 配图
+
+## 排版
+"""
+
+
+def next_id(kind, prefix):
+    """按目录里已有的最大编号往下排，dr-001 之后是 dr-002。"""
+    d = DIRS.get(kind)
+    if not d:
+        raise ValueError("未知的类型：%s" % kind)
+    os.makedirs(d, exist_ok=True)
+    nums = []
+    for name in os.listdir(d):
+        m = re.match(r"%s-(\d+)\.md$" % prefix, name)
+        if m:
+            nums.append(int(m.group(1)))
+    return "%s-%03d" % (prefix, (max(nums) + 1) if nums else 1)
+
+
+def new_entity(kind, payload):
+    """页面上直接建一条，不用手动去写 md。只填空壳，内容还是得聊出来。"""
+    today = date.today().isoformat()
+    ident = str(payload.get("身份") or "").strip() or settings().get("身份") or ""
+
+    if kind == "灵感":
+        text = str(payload.get("原话") or "").strip()
+        if not text:
+            raise ValueError("先写一句原话")
+        nid = next_id("灵感", "sp")
+        meta = {"id": nid, "来源": str(payload.get("来源") or "").strip() or "随手记",
+                "原话": text, "捕获": today, "关联身份": ident, "状态": "未孵化"}
+        body = "## 当时的场景\n\n（待补：在哪听到的、当时在想什么。）\n"
+
+    elif kind == "选题":
+        title = str(payload.get("标题候选") or "").strip()
+        if not title:
+            raise ValueError("先给个标题")
+        nid = next_id("选题", "tp")
+        meta = {"id": nid, "来自灵感": str(payload.get("来自灵感") or "").strip(),
+                "标题候选": title, "正方": "", "反方": "", "我站": "", "我可能错在哪": "",
+                "目标身份": ident,
+                "目标平台": str(payload.get("目标平台") or "").strip(),
+                "优先级": "P1", "状态": "待定", "创建": today}
+        body = "## 必须写进去的细节\n\n（待补：能撑住这个题的真实经历或数字。）\n"
+
+    elif kind == "账号":
+        name = str(payload.get("账号名") or "").strip()
+        plat = str(payload.get("平台") or "").strip()
+        if plat not in PLATFORMS:
+            raise ValueError("平台只能是：%s" % " / ".join(PLATFORMS))
+        if not name:
+            raise ValueError("账号名要填")
+        nid = next_id("账号", "acc")
+        meta = {"id": nid, "身份": ident, "平台": plat, "账号名": name,
+                "粉丝基线": 0, "状态": "正常", "书签适配器": "", "创建": today}
+        body = "## 这个号的现状\n\n（待补：现在多少粉、主要发什么、最近什么问题。）\n"
+
+    else:
+        raise ValueError("建不了这种：%s" % kind)
+
+    path = os.path.join(DIRS[kind], "%s.md" % nid)
+    write_md(path, meta, body, kind)
+    append_log("新建", nid, "建了一条%s" % kind, meta.get("原话") or meta.get("标题候选") or meta.get("账号名") or "")
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    return fresh
+
+
+def new_draft(topic_id, ident_id=""):
+    """从一条选题开一篇新稿，直接落在第一阶段「讨论」。"""
+    topic_id = str(topic_id or "").strip()
+    if not topic_id:
+        raise ValueError("没说从哪条选题开")
+    topic = None
+    for t in list_entity("选题"):
+        if t["id"] == topic_id:
+            topic = t
+            break
+    if topic is None:
+        raise ValueError("找不到选题：%s" % topic_id)
+
+    if not ident_id:
+        ident_id = (id_list(topic.get("目标身份")) or [settings().get("身份") or ""])[0]
+
+    did = next_id("稿件", "dr")
+    meta = {
+        "id": did, "选题": topic_id, "身份": ident_id or "",
+        "版本": "v1", "阶段": "讨论", "字数": 0,
+        "创建": date.today().isoformat(), "更新": date.today().isoformat(),
+    }
+    path = os.path.join(DIRS["稿件"], "%s.md" % did)
+    write_md(path, meta, DRAFT_TEMPLATE.format(topic=topic_id), "稿件")
+    append_log("开稿", did, "从 %s 开稿" % topic_id,
+               (topic.get("标题候选") or "").split("|")[0].strip())
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    return fresh
+
+
+# ---------------------------------------------------------------- 素材文件
+
+# 拖进来的附件就放 数据/素材/<稿号>/ 下，和 md 一样不进仓库。
+ASSET_OK = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf",
+            ".txt", ".md", ".docx", ".csv", ".html"}
+ASSET_MAX = 20 * 1024 * 1024
+
+
+def asset_dir(draft_id):
+    safe = re.sub(r"[^0-9A-Za-z_-]", "", str(draft_id or ""))
+    if not safe:
+        raise ValueError("稿号不对：%r" % draft_id)
+    return os.path.join(ASSET_DIR, safe)
+
+
+def list_assets(draft_id):
+    """列出这篇稿的附件。目录不存在就当没有，别报错。"""
+    try:
+        d = asset_dir(draft_id)
+    except ValueError:
+        return []
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for name in sorted(os.listdir(d)):
+        path = os.path.join(d, name)
+        if not os.path.isfile(path):
+            continue
+        ext = os.path.splitext(name)[1].lower()
+        out.append({
+            "名字": name,
+            "地址": "/数据/素材/%s/%s" % (os.path.basename(d), quote(name)),
+            "大小": os.path.getsize(path),
+            "是图": ext in {".png", ".jpg", ".jpeg", ".webp", ".gif"},
+        })
+    return out
+
+
+def save_asset(draft_id, name, b64):
+    """浏览器把文件读成 base64 传上来，这里落盘。"""
+    raw = os.path.basename(str(name or "")).strip()
+    raw = re.sub(r'[\\/:*?"<>|]', "_", raw)
+    if not raw:
+        raise ValueError("文件没名字")
+    ext = os.path.splitext(raw)[1].lower()
+    if ext not in ASSET_OK:
+        raise ValueError("这个类型先不支持：%s" % (ext or "无扩展名"))
+    try:
+        blob = base64.b64decode(str(b64 or "").split(",")[-1], validate=False)
+    except Exception:
+        raise ValueError("文件内容解不开")
+    if not blob:
+        raise ValueError("文件是空的")
+    if len(blob) > ASSET_MAX:
+        raise ValueError("文件超过 20MB")
+
+    d = asset_dir(draft_id)
+    os.makedirs(d, exist_ok=True)
+    base, i = raw, 1
+    while os.path.exists(os.path.join(d, raw)):
+        stem, ext2 = os.path.splitext(base)
+        raw = "%s-%d%s" % (stem, i, ext2)
+        i += 1
+    with open(os.path.join(d, raw), "wb") as f:
+        f.write(blob)
+    return raw
+
+
+# ---------------------------------------------------------------- 日志
+
+def append_log(类型, 对象, 动作, 备注=""):
+    """一条线一行，calendar 和首页都从这里读。"""
+    now = datetime.now()
+    row = {"时间": now.strftime("%Y-%m-%d %H:%M"), "日期": now.date().isoformat(),
+           "类型": 类型, "对象": 对象, "动作": 动作,
+           "备注": str(备注 or "").replace("\n", " ").strip()}
+    fresh = not os.path.isfile(LOG_CSV)
+    try:
+        os.makedirs(DATA, exist_ok=True)
+        with open(LOG_CSV, "a", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=LOG_FIELDS, extrasaction="ignore")
+            if fresh:
+                w.writeheader()
+            w.writerow(row)
+    except OSError:
+        pass  # 日志写不进去不该挡住业务
+    return row
+
+
+def read_logs(limit=400):
+    if not os.path.isfile(LOG_CSV):
+        return []
+    rows = []
+    try:
+        with open(LOG_CSV, "r", encoding="utf-8-sig", newline="") as f:
+            for raw in csv.DictReader(f):
+                if not (raw.get("时间") or "").strip():
+                    continue
+                rows.append(dict((k, (raw.get(k) or "").strip()) for k in LOG_FIELDS))
+    except (OSError, csv.Error):
+        return []
+    rows.sort(key=lambda r: r["时间"], reverse=True)
+    return rows[:limit]
+
 
 
 
@@ -401,12 +813,23 @@ def build_todos(state):
             })
 
     for d in state["稿件"]:
-        if d.get("状态") == "待确认":
+        here = stage_of(d)
+        redo = redo_list(d)
+        if here == "正文":
             todos.append({
                 "级别": "red",
-                "类型": "稿件待你过目",
+                "类型": "正文等你过目",
                 "标题": "%s %s" % (d["id"], d.get("选题") or ""),
-                "说明": "AI 改完了，等你看一眼。",
+                "说明": "正文写完了，等你改。改到能发就进配图。",
+                "目标": {"kind": "稿件", "id": d["id"]},
+            })
+        elif redo:
+            todos.append({
+                "级别": "red",
+                "类型": "阶段产物待重做",
+                "标题": "%s %s" % (d["id"], d.get("选题") or ""),
+                "说明": "退回改过正文，%s 要重做。" % "、".join(
+                    x for x in STAGES if x in redo),
                 "目标": {"kind": "稿件", "id": d["id"]},
             })
 
@@ -643,7 +1066,24 @@ def build_state(ident_id=""):
     for d in state["稿件"]:
         t = topic_map.get(d.get("选题"), {})
         d["选题标题"] = (t.get("标题候选") or "").split("|")[0].strip() or d.get("选题", "")
-        d["字数"] = len(re.sub(r"\s", "", (d.get("正文") or ""))) or 0
+        # 一篇稿只服务一个平台：配图和排版都按单一规格做，多发要另开一篇
+        d["目标平台"] = t.get("目标平台") or ""
+        # 字数只算「## 正文」这一节，别把小节标题和配图排版也算成文章字数
+        d["字数"] = len(re.sub(r"\s", "", sections_of(d.get("正文") or "").get("正文") or ""))
+        # 五阶段：前端靠这几个字段画进度条，不用自己算
+        here = stage_of(d)
+        d["阶段"] = here
+        d["阶段名"] = STAGE_LABEL.get(here, here)
+        d["阶段序号"] = STAGES.index(here) + 1
+        d["阶段总数"] = len(STAGES)
+        d["待重做"] = redo_list(d)
+        secs = sections_of(d.get("正文") or "")
+        d["有产物"] = [s for s in STAGES if has_product(d, secs, s)]
+        # 素材：AI 搜的和粘的链接都落在「## 素材」；拖进来的文件在 数据/素材/<id>/
+        d["素材"] = secs.get("素材") or ""
+        d["文件"] = list_assets(d["id"])
+        mode = str(d.get("配图形式") or "").strip()
+        d["配图形式"] = mode if mode in IMAGE_MODES else "公众号"
 
     for t in state["选题"]:
         t["稿件"] = [d["id"] for d in state["稿件"] if d.get("选题") == t["id"]]
@@ -674,6 +1114,8 @@ def build_state(ident_id=""):
     state["身份总数"] = len(roster)
     state["待办"] = build_todos(state)
     state["统计"] = build_stats(state)
+    state["日志"] = read_logs()
+    state["阶段定义"] = [{"键": s, "名": STAGE_LABEL.get(s, s)} for s in STAGES]
 
     conf = local_conf()
     model = settings().get("模型") or {}
@@ -706,7 +1148,12 @@ BASE_RULES = """你在给「{name}」当执笔人。他一个人管多个平台�
 ```json
 {{"写入":[{{"kind":"选题","id":"tp-001","字段":{{"反方":"改后的内容"}}}}]}}
 ```
-只能改「灵感/选题/稿件/身份」四类，字段名必须是文件里已有的。正文用 "正文" 这个键。
+只能改「灵感/选题/稿件/身份」四类，字段名必须是文件里已有的。
+改整篇正文要放**顶层** "正文"，不要塞进「字段」里：
+```json
+{{"写入":[{{"kind":"稿件","id":"dr-001","正文":"整篇文章，Markdown"}}]}}
+```
+「正文」里写的是文章本身，只替换稿件的「## 正文」这一节，素材/配图/排版那些小节不会被碰到。
 没有要改的就不要输出这段 json。
 
 他的人设：
@@ -960,8 +1407,13 @@ def extract_writes(text):
             fields = w.get("字段") or {}
             if not isinstance(fields, dict):
                 fields = {}
-            out.append({"kind": kind, "id": item_id,
-                        "字段": dict((str(k), str(v)) for k, v in fields.items())})
+            fields = dict((str(k), str(v)) for k, v in fields.items())
+            # 正文是整段文章，不是普通字段：放顶层，也兼容模型塞进「字段」里
+            body = fields.pop("正文", None)
+            if isinstance(w.get("正文"), str) and w["正文"].strip():
+                body = w["正文"]
+            out.append({"kind": kind, "id": item_id, "字段": fields,
+                        "正文": (body or "").strip()})
     return out
 
 
@@ -1033,6 +1485,24 @@ class Handler(SimpleHTTPRequestHandler):
                 p = self._body()
                 item = save_section(p.get("kind", "身份"), p.get("id", ""),
                                     p.get("小节", ""), p.get("内容", ""))
+                return self._json({"ok": True, "item": item})
+            if path == "/api/asset":
+                p = self._body()
+                name = save_asset(p.get("稿件", ""), p.get("名字", ""), p.get("数据", ""))
+                return self._json({"ok": True, "名字": name,
+                                   "文件": list_assets(p.get("稿件", ""))})
+            if path == "/api/stage":
+                p = self._body()
+                item = advance_stage(p.get("kind", "稿件"), p.get("id", ""),
+                                     p.get("阶段", ""), p.get("说明", ""))
+                return self._json({"ok": True, "item": item})
+            if path == "/api/new":
+                p = self._body()
+                item = new_entity(p.get("kind", ""), p)
+                return self._json({"ok": True, "item": item})
+            if path == "/api/new_draft":
+                p = self._body()
+                item = new_draft(p.get("选题", ""), p.get("身份", ""))
                 return self._json({"ok": True, "item": item})
             if path == "/api/ingest":
                 p = self._body()
