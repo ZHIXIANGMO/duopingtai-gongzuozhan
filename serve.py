@@ -51,12 +51,14 @@ ORDER = {
     "灵感": ["id", "来源", "原话", "捕获", "关联身份", "状态"],
     "选题": ["id", "来自灵感", "标题候选", "正方", "反方", "我站", "我可能错在哪",
            "目标身份", "目标平台", "优先级", "状态", "创建"],
-    "稿件": ["id", "选题", "身份", "版本", "阶段", "配图形式", "重做", "字数", "创建", "更新"],
+    "稿件": ["id", "选题", "身份", "版本", "阶段", "配图形式", "排版", "重做",
+           "字数", "创建", "更新"],
 }
 
 # 四阶段流水线。顺序就是进度条的格子顺序，改这里，前端跟着变。
 # 复盘不在这里：数据在数据页看，稿件只走到「发出去」为止。
 STAGES = ["讨论", "正文", "配图", "排版"]
+PLATFORMS = ["小红书", "公众号", "抖音", "B站"]
 STAGE_LABEL = {
     "讨论": "选题与讨论",
     "正文": "正文",
@@ -169,13 +171,12 @@ def save_entity(kind, item_id, fields=None, body=None):
             secs = sections_of(body)
             redo = redo_list(meta)
             for s in STAGES[STAGES.index(here):]:
-                name = STAGE_SECTION.get(s)
-                if name and (secs.get(name) or "").strip() and s not in redo:
+                if s not in redo and has_product(meta, secs, s):
                     redo.append(s)
             if redo:
                 meta["重做"] = ",".join(redo)
                 append_log("正文", item_id, "改了正文",
-                           "；".join(x for x in STAGES if x in redo) + " 待重做")
+                           "；".join(STAGE_LABEL.get(x, x) for x in redo) + " 待重做")
     snapshot(path, kind)
     write_md(path, meta, old_body if body is None else body, kind)
 
@@ -206,8 +207,9 @@ def rewrite_section(body, section, text):
     """只替换一个小节，别的小节原样留着。缺这个小节就按固定顺序插进去。"""
     head, blocks = [], []
     for line in (body or "").splitlines():
-        if line.startswith("## "):
-            blocks.append([line[3:].strip(), []])
+        name = line[3:].strip() if line.startswith("## ") else None
+        if name is not None and name in KNOWN_SECTIONS:
+            blocks.append([name, []])
         elif blocks:
             blocks[-1][1].append(line)
         else:
@@ -267,10 +269,24 @@ def save_section(kind, item_id, section, text):
         if str(section).strip() in redo:
             redo.remove(str(section).strip())
             meta["重做"] = ",".join(redo)
+        # 改的是正文：后面做过的配图/排版就对不上了，跟 save_entity 一条规矩
+        if str(section).strip() == "正文":
+            before = sections_of(old_body).get("正文") or ""
+            if text.strip() != before.strip():
+                here = stage_of(meta)
+                for s in STAGES[STAGES.index(here) + 1:]:
+                    name = STAGE_SECTION.get(s)
+                    if name and s not in redo and has_product(meta, sections_of(old_body), s):
+                        redo.append(s)
+                if redo:
+                    meta["重做"] = ",".join(redo)
+                    append_log("正文", item_id, "改了正文",
+                               "；".join(STAGE_LABEL.get(x, x) for x in redo) + " 待重做")
         append_log("产物", item_id, "写了「%s」" % str(section).strip(), "")
     snapshot(path, kind)
-    write_md(path, meta, rewrite_section(old_body, str(section).strip(),
-                                         flatten_heads(text)), kind)
+    # 只有人设的小节是「## 标题」式排版，稿件的小节里 # 就是正经 Markdown 标题，别压
+    content = flatten_heads(text) if kind == "身份" else text
+    write_md(path, meta, rewrite_section(old_body, str(section).strip(), content), kind)
 
     fresh, fresh_body = parse_md(path)
     fresh["正文"] = fresh_body
@@ -279,19 +295,43 @@ def save_section(kind, item_id, section, text):
 
 # ---------------------------------------------------------------- 五阶段
 
+# 正文里只有这些 ## 才算小节边界。别的一律当内容——
+# 否则正文中间写一句「## 早上」，整篇文章就会被切成两半，还不报错。
+KNOWN_SECTIONS = ("素材", "正文", "这版改了什么", "人工意见", "配图", "排版", "复盘",
+                  "必须写进去的细节")
+
+
 def sections_of(body):
     """把正文按 ## 切成 {小节名: 内容}。用来判断某个阶段的产物有没有做。"""
     out, cur, buf = {}, None, []
     for line in (body or "").splitlines():
-        if line.startswith("## "):
+        name = line[3:].strip() if line.startswith("## ") else None
+        if name is not None and name in KNOWN_SECTIONS:
             if cur is not None:
                 out[cur] = "\n".join(buf).strip()
-            cur, buf = line[3:].strip(), []
+            cur, buf = name, []
         elif cur is not None:
+            buf.append(line)
+        elif name is not None:
+            # 开头就是未知的 ##，别丢，当内容留着
             buf.append(line)
     if cur is not None:
         out[cur] = "\n".join(buf).strip()
     return out
+
+
+def has_product(meta, secs, stage):
+    """这一格到底做没做过。
+    配图和排版不靠小节记：配图写 `配图形式` 字段，排版写 `排版` 字段。
+    只看 ## 小节的话，这两格永远是「没产物」，退回时也就永远不提示待重做。"""
+    if stage == "配图":
+        return bool(str(meta.get("配图形式") or "").strip()
+                    or (secs.get("配图") or "").strip())
+    if stage == "排版":
+        return bool(str(meta.get("排版") or "").strip()
+                    or (secs.get("排版") or "").strip())
+    name = STAGE_SECTION.get(stage)
+    return bool(name and (secs.get(name) or "").strip())
 
 
 def stage_of(item):
@@ -347,23 +387,27 @@ def advance_stage(kind, item_id, target, note=""):
 
     if ti < ci:
         for s in STAGES[ti + 1:]:
-            name = STAGE_SECTION.get(s)
-            if name and (secs.get(name) or "").strip() and s not in redo:
+            if s not in redo and has_product(meta, secs, s):
                 redo.append(s)
         if redo:
-            events.append("%s 待重做" % "、".join(
-                x for x in STAGES if x in redo))
+            names = [STAGE_LABEL.get(x, x) for x in STAGES if x in redo]
+            events.append("%s 待重做" % "、".join(names))
     elif ti > ci:
         for s in STAGES[ci:ti + 1]:
             if s not in redo:
                 continue
             name = STAGE_SECTION.get(s)
+            old = (secs.get(name) or "").strip() if name else ""
+            if old:
+                archive_section(item_id, s, old)
             if name:
-                old = (secs.get(name) or "").strip()
-                if old:
-                    archive_section(item_id, s, old)
                 body = rewrite_section(body, name, "")
-                events.append("%s 作废重开" % s)
+            # 配图和排版的产物记在字段上，重开时一起清掉，否则「重做」等于没做
+            if s == "配图":
+                meta.pop("配图形式", None)
+            if s == "排版":
+                meta.pop("排版", None)
+            events.append("%s 作废重开" % STAGE_LABEL.get(s, s))
             redo.remove(s)
         skipped = [s for s in STAGES[ci + 1:ti] if s not in redo]
         if skipped:
@@ -414,6 +458,55 @@ def next_id(kind, prefix):
         if m:
             nums.append(int(m.group(1)))
     return "%s-%03d" % (prefix, (max(nums) + 1) if nums else 1)
+
+
+def new_entity(kind, payload):
+    """页面上直接建一条，不用手动去写 md。只填空壳，内容还是得聊出来。"""
+    today = date.today().isoformat()
+    ident = str(payload.get("身份") or "").strip() or settings().get("身份") or ""
+
+    if kind == "灵感":
+        text = str(payload.get("原话") or "").strip()
+        if not text:
+            raise ValueError("先写一句原话")
+        nid = next_id("灵感", "sp")
+        meta = {"id": nid, "来源": str(payload.get("来源") or "").strip() or "随手记",
+                "原话": text, "捕获": today, "关联身份": ident, "状态": "未孵化"}
+        body = "## 当时的场景\n\n（待补：在哪听到的、当时在想什么。）\n"
+
+    elif kind == "选题":
+        title = str(payload.get("标题候选") or "").strip()
+        if not title:
+            raise ValueError("先给个标题")
+        nid = next_id("选题", "tp")
+        meta = {"id": nid, "来自灵感": str(payload.get("来自灵感") or "").strip(),
+                "标题候选": title, "正方": "", "反方": "", "我站": "", "我可能错在哪": "",
+                "目标身份": ident,
+                "目标平台": str(payload.get("目标平台") or "").strip(),
+                "优先级": "P1", "状态": "待定", "创建": today}
+        body = "## 必须写进去的细节\n\n（待补：能撑住这个题的真实经历或数字。）\n"
+
+    elif kind == "账号":
+        name = str(payload.get("账号名") or "").strip()
+        plat = str(payload.get("平台") or "").strip()
+        if plat not in PLATFORMS:
+            raise ValueError("平台只能是：%s" % " / ".join(PLATFORMS))
+        if not name:
+            raise ValueError("账号名要填")
+        nid = next_id("账号", "acc")
+        meta = {"id": nid, "身份": ident, "平台": plat, "账号名": name,
+                "粉丝基线": 0, "状态": "正常", "书签适配器": "", "创建": today}
+        body = "## 这个号的现状\n\n（待补：现在多少粉、主要发什么、最近什么问题。）\n"
+
+    else:
+        raise ValueError("建不了这种：%s" % kind)
+
+    path = os.path.join(DIRS[kind], "%s.md" % nid)
+    write_md(path, meta, body, kind)
+    append_log("新建", nid, "建了一条%s" % kind, meta.get("原话") or meta.get("标题候选") or meta.get("账号名") or "")
+    fresh, fresh_body = parse_md(path)
+    fresh["正文"] = fresh_body
+    return fresh
 
 
 def new_draft(topic_id, ident_id=""):
@@ -973,6 +1066,8 @@ def build_state(ident_id=""):
     for d in state["稿件"]:
         t = topic_map.get(d.get("选题"), {})
         d["选题标题"] = (t.get("标题候选") or "").split("|")[0].strip() or d.get("选题", "")
+        # 一篇稿只服务一个平台：配图和排版都按单一规格做，多发要另开一篇
+        d["目标平台"] = t.get("目标平台") or ""
         # 字数只算「## 正文」这一节，别把小节标题和配图排版也算成文章字数
         d["字数"] = len(re.sub(r"\s", "", sections_of(d.get("正文") or "").get("正文") or ""))
         # 五阶段：前端靠这几个字段画进度条，不用自己算
@@ -983,8 +1078,7 @@ def build_state(ident_id=""):
         d["阶段总数"] = len(STAGES)
         d["待重做"] = redo_list(d)
         secs = sections_of(d.get("正文") or "")
-        d["有产物"] = [s for s in STAGES if STAGE_SECTION.get(s)
-                     and (secs.get(STAGE_SECTION[s]) or "").strip()]
+        d["有产物"] = [s for s in STAGES if has_product(d, secs, s)]
         # 素材：AI 搜的和粘的链接都落在「## 素材」；拖进来的文件在 数据/素材/<id>/
         d["素材"] = secs.get("素材") or ""
         d["文件"] = list_assets(d["id"])
@@ -1054,7 +1148,12 @@ BASE_RULES = """你在给「{name}」当执笔人。他一个人管多个平台�
 ```json
 {{"写入":[{{"kind":"选题","id":"tp-001","字段":{{"反方":"改后的内容"}}}}]}}
 ```
-只能改「灵感/选题/稿件/身份」四类，字段名必须是文件里已有的。正文用 "正文" 这个键。
+只能改「灵感/选题/稿件/身份」四类，字段名必须是文件里已有的。
+改整篇正文要放**顶层** "正文"，不要塞进「字段」里：
+```json
+{{"写入":[{{"kind":"稿件","id":"dr-001","正文":"整篇文章，Markdown"}}]}}
+```
+「正文」里写的是文章本身，只替换稿件的「## 正文」这一节，素材/配图/排版那些小节不会被碰到。
 没有要改的就不要输出这段 json。
 
 他的人设：
@@ -1308,8 +1407,13 @@ def extract_writes(text):
             fields = w.get("字段") or {}
             if not isinstance(fields, dict):
                 fields = {}
-            out.append({"kind": kind, "id": item_id,
-                        "字段": dict((str(k), str(v)) for k, v in fields.items())})
+            fields = dict((str(k), str(v)) for k, v in fields.items())
+            # 正文是整段文章，不是普通字段：放顶层，也兼容模型塞进「字段」里
+            body = fields.pop("正文", None)
+            if isinstance(w.get("正文"), str) and w["正文"].strip():
+                body = w["正文"]
+            out.append({"kind": kind, "id": item_id, "字段": fields,
+                        "正文": (body or "").strip()})
     return out
 
 
@@ -1391,6 +1495,10 @@ class Handler(SimpleHTTPRequestHandler):
                 p = self._body()
                 item = advance_stage(p.get("kind", "稿件"), p.get("id", ""),
                                      p.get("阶段", ""), p.get("说明", ""))
+                return self._json({"ok": True, "item": item})
+            if path == "/api/new":
+                p = self._body()
+                item = new_entity(p.get("kind", ""), p)
                 return self._json({"ok": True, "item": item})
             if path == "/api/new_draft":
                 p = self._body()

@@ -127,11 +127,29 @@ function countWords(s){
 }
 
 /* 从一段正文里取某个 ## 小节 */
-function sectionOf(text, name){
-  for(const chunk of String(text || '').split(/^## /m)){
-    if(chunk.startsWith(name)) return chunk.slice(name.length).trim();
+/* 正文里只有这几个 ## 才算小节。别的一律当内容——
+   正文中间写一句「## 早上」，按老写法整篇会被切成两半。 */
+const KNOWN_SECTIONS = ['素材', '正文', '这版改了什么', '人工意见', '配图', '排版',
+                        '复盘', '必须写进去的细节'];
+
+function sectionsOf(text){
+  const out = {};
+  let cur = null, buf = [];
+  for(const line of String(text || '').split('\n')){
+    const name = line.startsWith('## ') ? line.slice(3).trim() : null;
+    if(name !== null && KNOWN_SECTIONS.indexOf(name) >= 0){
+      if(cur !== null) out[cur] = buf.join('\n').trim();
+      cur = name; buf = [];
+    } else if(cur !== null){
+      buf.push(line);
+    }
   }
-  return '';
+  if(cur !== null) out[cur] = buf.join('\n').trim();
+  return out;
+}
+
+function sectionOf(text, name){
+  return sectionsOf(text)[name] || '';
 }
 
 function sectionText(name){
@@ -252,7 +270,10 @@ function panelImage(){
     </div>`).join('');
 
   return `
-    ${sec('配哪种图', `<div class="dimgs">${cards}</div>`,
+    ${sec('配哪种图', `
+      ${D['目标平台'] ? `<div class="dtip" style="margin:0 0 9px">这条选题目标平台是
+        <b>${esc(D['目标平台'])}</b>。一篇稿只按一个平台的规格做，发第二个平台要另开一篇。</div>` : ''}
+      <div class="dimgs">${cards}</div>`,
       '只能选一种，两种不同时做')}
     ${cur === '不配图' ? sec('图位', '<div class="dbox muted">不配图，这一篇纯文字。</div>')
       : sec('图位', `<div class="dslots ${cur === '小红书' ? 'vert' : ''}">${slots}</div>`)}
@@ -352,7 +373,8 @@ function bindPanel(){
     $('#saveBody').addEventListener('click', async ev => {
       ev.target.disabled = true;
       try{
-        await postJSON('/api/write', {kind:'稿件', id:D.id, '正文': replaceBodySection(fBody.value)});
+        // 走小节接口：只换「## 正文」，素材/配图/排版不动，正文里的 ## 也不会被当小节切
+        await postJSON('/api/section', {kind:'稿件', id:D.id, '小节':'正文', '内容': fBody.value});
         await reload('正文存好了');
       }catch(e){ toast('没存上：' + e.message); }
       finally{ ev.target.disabled = false; }
@@ -491,7 +513,18 @@ function bindPanel(){
       let ok = false;
       try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
       sel.removeAllRanges();
-      toast(ok ? '复制好了，去粘' : '复制失败，浏览器不让。手动选一遍再按 Ctrl+C');
+      if(!ok){
+        toast('复制失败，浏览器不让。手动选一遍再按 Ctrl+C');
+        return;
+      }
+      // 复制出去就等于这套版式定了，记进 md，换电脑也知道这篇怎么排的
+      const c = layoutCfg();
+      try{
+        await postJSON('/api/write', {kind:'稿件', id:D.id, '字段': {
+          '排版': `${c.字号}px · 行距 ${c.行距} · 字距 ${c.字距}px · ${c.主题} · ${c.设备}看`
+        }});
+        await reload('复制好了，版式也记下了');
+      }catch(e){ toast('复制好了，但版式没存上：' + e.message); }
     });
   }
 
@@ -507,22 +540,6 @@ function bindPanel(){
       }catch(e){ toast(e.message); go.disabled = false; }
     });
   }
-}
-
-/* 只换「## 正文」这一节，别的小节原样留着 */
-function replaceBodySection(text){
-  const raw = D['正文'] || '';
-  const parts = raw.split(/^## /m);
-  let hit = false;
-  const out = parts.map(chunk => {
-    if(!hit && chunk.startsWith('正文')){
-      hit = true;
-      return '正文\n\n' + String(text || '').trim() + '\n\n';
-    }
-    return chunk;
-  });
-  if(!hit) out.push('正文\n\n' + String(text || '').trim() + '\n');
-  return out.join('## ');
 }
 
 /* ---------- 跳阶段 ---------- */

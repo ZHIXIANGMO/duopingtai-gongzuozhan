@@ -41,7 +41,7 @@
       <div class="who-s" style="line-height:1.9;color:#7C7C7C">
         这里只显示<b id="whoName"></b>名下的号，别的 IP 不会混进来。想换一个 IP 看，点左下角那摞卡片。<br>
         一行是一个平台。同一个平台可以开多个号，比如一个主号一个测试号，互不影响。<br>
-        点任意一个号，进数据页只看它。"＋"不是缺口，是提醒你这里还能再开。
+        点任意一个号，进数据页只看它。每行末尾的"＋"点一下就能给你开个新号。
       </div>
     </div>
   </main>
@@ -113,7 +113,7 @@ function renderGrid(){
         <div class="mx-cell add" data-add="${esc(p)}">
           <div class="mx-plus">＋</div>
           <div class="mx-sub">${cells.length ? '再开一个号' : '开第一个号'}</div>
-          <div class="mx-sub" style="margin-top:3px;color:#B8B8B8">点这里看怎么加</div>
+          <div class="mx-sub" style="margin-top:3px;color:#B8B8B8">点一下就能建</div>
         </div>
       </div>
     </div>`;
@@ -122,10 +122,27 @@ function renderGrid(){
   $('#grid').innerHTML = html;
   $('#topCount').textContent = (who['名称'] || '未命名') + ' · ' + accs.length + ' 个号';
 
-  // 「＋」不是真按钮，点了告诉人去哪加，别让它看起来能自动建号
+  // 「＋」现在真能建号：点开在该行末尾长一个输入框，回车写入 数据/账号/
   $('#grid').querySelectorAll('[data-add]').forEach(el => {
     el.addEventListener('click', () => {
-      toast('在 数据/账号/ 里复制一个 md，改 id 和 账号名，平台填「' + el.dataset.add + '」');
+      const plat = el.dataset.add;
+      const row = el.closest('.row-plat');
+      const box = row.querySelector('.cells');
+      // 输入框排在 ＋ 前面，保证「＋」一直在最后
+      const holder = document.createElement('div');
+      holder.style.cssText = 'display:flex;align-items:center;gap:6px;flex:none';
+      box.insertBefore(holder, el);
+      inlineNew(holder, {
+        placeholder: plat + ' 账号名…',
+        onSubmit: async v => {
+          await postJSON('/api/new', {kind: '账号', '平台': plat, '账号名': v});
+          holder.remove();
+          STATE = await getJSON(withIdent('/api/state'));
+          renderWho();
+          renderGrid();
+          toast('号建好了，去数据页补基线');
+        }
+      });
     });
   });
 }

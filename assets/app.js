@@ -13,6 +13,15 @@ function esc(s){
   ));
 }
 
+/* 本地日期 YYYY-MM-DD。
+   别用 toISOString()：它按 UTC 算，东八区早上 8 点前会掉到前一天，
+   日历会整列错位、今天永远不高亮。 */
+function ymd(d){
+  const x = d || new Date();
+  const p = n => (n < 10 ? '0' : '') + n;
+  return x.getFullYear() + '-' + p(x.getMonth() + 1) + '-' + p(x.getDate());
+}
+
 function fmt(n){
   n = Number(n || 0);
   if(n >= 10000) return (n / 10000).toFixed(n >= 100000 ? 0 : 1) + '万';
@@ -92,6 +101,47 @@ function toast(msg){
   el.classList.add('on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('on'), 2400);
+}
+
+/* ---------- 行内新建 ---------- */
+/* 不弹窗，直接在列表顶上长一行输入框。回车建，ESC 撤。 */
+function inlineNew(host, opts){
+  opts = opts || {};
+  if(!host) return;
+  const old = host.querySelector(':scope > .inew');
+  if(old) old.remove();
+
+  const row = document.createElement('div');
+  row.className = 'inew';
+  row.innerHTML = `<input placeholder="${esc(opts.placeholder || '写个名字')}">
+    <button class="btn btn-sm btn-primary">建</button>
+    <button class="btn btn-sm" data-x>取消</button>`;
+
+  if(opts.where === 'end') host.appendChild(row); else host.prepend(row);
+
+  const input = row.querySelector('input');
+  input.focus();
+
+  const submit = async () => {
+    const v = input.value.trim();
+    if(!v) return;
+    input.disabled = true;
+    try{
+      await opts.onSubmit(v);
+      row.remove();
+    }catch(e){
+      toast(e.message || '没建成');
+      input.disabled = false;
+      input.focus();
+    }
+  };
+
+  row.querySelector('.btn-primary').addEventListener('click', submit);
+  row.querySelector('[data-x]').addEventListener('click', () => row.remove());
+  input.addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ e.preventDefault(); submit(); }
+    if(e.key === 'Escape') row.remove();
+  });
 }
 
 function setSync(kind, text){
@@ -357,8 +407,17 @@ async function applyWrites(writes){
   let ok = 0, fail = 0;
   for(const w of writes){
     try{
-      await postJSON('/api/write', {kind:w.kind, id:w.id, '字段': w['字段'] || {}});
-      ok++;
+      const fields = w['字段'] || {};
+      if(Object.keys(fields).length){
+        await postJSON('/api/write', {kind: w.kind, id: w.id, '字段': fields});
+        ok++;
+      }
+      if(w['正文'] && w.kind === '稿件'){
+        // 正文走小节接口：只换「## 正文」这一段，素材/配图/排版不会被抹掉
+        await postJSON('/api/section', {kind: '稿件', id: w.id, '小节': '正文', '内容': w['正文']});
+        ok++;
+      }
+      if(!Object.keys(fields).length && !(w['正文'] && w.kind === '稿件')) fail++;
     }catch(e){ fail++; }
   }
   return {ok, fail};

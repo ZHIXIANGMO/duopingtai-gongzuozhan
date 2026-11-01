@@ -29,7 +29,7 @@ let PICKDAY = '';   // 日历上点开的那一天
 
 /* ---------- 小工具 ---------- */
 function todayStr(){
-  return ((STATE['统计'] || {})['今天']) || new Date().toISOString().slice(0, 10);
+  return ((STATE['统计'] || {})['今天']) || ymd(new Date());
 }
 
 function parseDay(s){
@@ -169,7 +169,7 @@ function topicsCard(){
       <span class="hrow-l"><b>${esc(title)}</b>
         <em class="hsub">${esc(d.id)} · ${esc(d['阶段名'] || d['阶段'])} · ${d['字数'] || 0} 字</em></span>
       <span class="hrow-bar">${stageBar(d, {cls:'sm', label:false})}</span>
-      <span class="hrow-tag chip">${esc(d['阶段'])} ${d['阶段序号']}/5</span>
+      <span class="hrow-tag chip">${esc(d['阶段'])} ${d['阶段序号']}/${d['阶段总数'] || STAGES.length}</span>
     </div>`;
   }).join('');
 
@@ -222,7 +222,7 @@ function calendarCard(){
     for(let i = 0; i < 7; i++){
       const d = shiftDay(firstMonday, w * 7 + i);
       if(d > today){ cells += '<i class="hm pad"></i>'; continue; }
-      const key = d.toISOString().slice(0, 10);
+      const key = ymd(d);
       const n = (byDay[key] || []).length;
       const cls = ['hm', 'l' + level(n)];
       if(key === todayStr()) cls.push('today');

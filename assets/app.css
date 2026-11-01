@@ -638,6 +638,14 @@ table.tb tr:hover td{background:#FCFCFC}
 .blank.small{font-size:10.5px;padding:14px 10px}
 
 /* ---------- toast ---------- */
+/* 行内新建：列表顶上长出来的一行 */
+.inew{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.inew input{flex:1;min-width:0;padding:8px 11px;border:1px solid var(--line2);border-radius:10px;
+  font-size:11.5px;background:#fff;color:var(--ink);transition:.16s}
+.inew input:focus{outline:none;border-color:#D6D6D6;box-shadow:0 0 0 3px #F7F7F7}
+.inew .btn{flex:none}
+.hd-act{margin-left:auto;display:flex;gap:6px;align-items:center}
+
 .toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,16px);background:#141414;
   color:#fff;font-size:12px;padding:11px 18px;border-radius:13px;opacity:0;pointer-events:none;
   transition:.24s;z-index:80;box-shadow:0 14px 34px rgba(0,0,0,.24);max-width:82vw;text-align:center}

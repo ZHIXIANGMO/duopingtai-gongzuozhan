@@ -21,6 +21,7 @@
   .dr-row .g{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dr-row .m{font-size:9.5px;color:#B5B5B5;white-space:nowrap}
   .dr-bar{width:54px;flex:none}
+  .hd-act{margin-left:auto;display:flex;gap:6px;align-items:center}
 </style>
 </head>
 <body>
@@ -40,6 +41,10 @@
         <div class="sec-head" style="margin-top:0">
           <h2>选题库</h2>
           <span>冲突填不满的排在最前</span>
+          <div class="hd-act">
+            <button class="btn btn-sm" id="newIdea">＋ 记一条灵感</button>
+            <button class="btn btn-sm btn-primary" id="newTopic">＋ 新建选题</button>
+          </div>
         </div>
         <div class="topic-list" id="list"></div>
       </div>
@@ -102,7 +107,7 @@ function conflictCard(label, value, id){
   const miss = isBlank(value);
   return `<div class="cf-row ${miss ? 'miss' : ''}">
     <div class="cf-k">${label}${miss ? ' · 待填' : ''}</div>
-    <div class="cf-v">${miss ? '还没填' : esc(value)}</div>
+    <textarea data-f="${esc(label)}" rows="2" placeholder="还没填，点这里写">${esc(value || '')}</textarea>
   </div>`;
 }
 
@@ -159,7 +164,7 @@ function renderPane(){
           ${drafts.map(d => `<a class="dr-row" href="draft.html?id=${encodeURIComponent(d.id)}">
             <span class="g">${esc(d.id)} · ${esc(d['选题标题'] || '')}</span>
             <span class="dr-bar">${stageBar(d, {cls:'sm', label:false})}</span>
-            <span class="m">${esc(d['阶段'] || '讨论')} ${d['阶段序号'] || 1}/5</span>
+            <span class="m">${esc(d['阶段'] || '讨论')} ${d['阶段序号'] || 1}/${d['阶段总数'] || STAGES.length}</span>
           </a>`).join('')}
         </div>` : ''}
 
@@ -189,10 +194,12 @@ function renderPane(){
   $('#saveBtn').addEventListener('click', async (ev) => {
     ev.target.disabled = true;
     try{
-      await postJSON('/api/write', {
-        kind: '选题', id: t.id,
-        '字段': { '标题候选': $('#fTitle').value.trim() }
+      // 冲突四格一起存：这四格填不硬，这个题就立不住
+      const fields = { '标题候选': $('#fTitle').value.trim() };
+      document.querySelectorAll('.cf-row textarea').forEach(el => {
+        fields[el.dataset.f] = el.value.trim();
       });
+      await postJSON('/api/write', {kind: '选题', id: t.id, '字段': fields});
       STATE = await getJSON(withIdent('/api/state'));
       renderSide(STATE, 'topics');
       renderList();
@@ -214,6 +221,36 @@ function renderPane(){
   if(want && (STATE['选题'] || []).some(t => t.id === want)) PICK = want;
   renderList();
   renderPane();
+
+  const fresh = async () => {
+    STATE = await getJSON(withIdent('/api/state'));
+    renderSide(STATE, 'topics');
+    renderList();
+    renderPane();
+  };
+
+  $('#newTopic').addEventListener('click', () => {
+    inlineNew($('#list'), {
+      placeholder: '一句话标题，回车就建',
+      onSubmit: async v => {
+        const r = await postJSON('/api/new', {kind: '选题', '标题候选': v});
+        PICK = r.item.id;
+        await fresh();
+        toast('建好了，右边补冲突四格');
+      }
+    });
+  });
+
+  $('#newIdea').addEventListener('click', () => {
+    inlineNew($('#list'), {
+      placeholder: '你听到的原话，回车就记',
+      onSubmit: async v => {
+        await postJSON('/api/new', {kind: '灵感', '原话': v});
+        await fresh();
+        toast('记下了，去首页待办里孵化');
+      }
+    });
+  });
 })();
 </script>
 </body>
