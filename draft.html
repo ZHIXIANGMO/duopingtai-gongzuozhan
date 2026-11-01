@@ -24,6 +24,14 @@
       </div>
 
       <div class="dstage" id="dStage"></div>
+      <div class="generation-box" id="generationBox">
+        <label for="writingRequest">这篇想怎么写</label>
+        <textarea id="writingRequest" rows="2" placeholder="选填：面向谁、想讲什么、篇幅或必须保留的细节"></textarea>
+        <div class="generation-actions"><button class="btn btn-primary" id="generateDraft">按人设生成初稿</button><a class="btn" href="settings.html">模型与技能</a></div>
+        <p class="generation-status" id="generationStatus" role="status" aria-live="polite">读取这篇稿的人设、灵感、选题和已启用技能。生成后先预览。</p>
+        <div class="generation-preview doc" id="generationPreview" hidden></div>
+        <div class="generation-actions" id="adoptActions" hidden><button class="btn btn-primary" id="adoptDraft">采用初稿</button><button class="btn" id="dismissDraft">收起预览</button></div>
+      </div>
       <div id="dPanel"></div>
     </section>
 
@@ -56,6 +64,8 @@
 <script src="assets/app.js"></script>
 <script>
 let STATE = null;
+let GENERATED = null;
+let GENERATING = false;
 let D = null;              // 当前稿件
 let TOPIC = null;          // 它挂的选题
 let HISTORY = [];
@@ -613,7 +623,7 @@ function scrollBottom(){
 }
 
 async function send(){
-  if(SENDING || !D) return;
+  if(SENDING || GENERATING || !D) return;
   const box = $('#input');
   const text = box.value.trim();
   if(!text) return;
@@ -704,9 +714,54 @@ function renderBanner(){
   const ai = (STATE && STATE['AI']) || {};
   if(ai['可用']){ host.innerHTML = ''; return; }
   host.innerHTML = `<div class="banner">
-    <b>还没配模型，现在聊不了。</b> 在根目录建 <code>本地配置.json</code>，写
-    <code>{"api_key": "sk-..."}</code>，改完重启服务。
+    <b>还没配模型。</b> <a href="settings.html">打开设置，填写接口和 API Key →</a>
   </div>`;
+}
+
+function initGeneration(){
+  const status = $('#generationStatus'), preview = $('#generationPreview');
+  $('#generateDraft').onclick = async () => {
+    if(GENERATING || SENDING || !D) return;
+    const editor = $('#fBody');
+    if(editor && editor.value.trim() !== bodyText().trim()){
+      status.textContent = '请先保存左侧正文，再生成初稿。'; return;
+    }
+    GENERATED = null; GENERATING = true;
+    $('#generateDraft').disabled = true; $('#send').disabled = true;
+    $('#adoptActions').hidden = true; preview.hidden = false; preview.innerHTML = '';
+    status.textContent = '正在按人设写作…';
+    try {
+      await chatStream('稿件', D.id, [], {
+        onDelta(full){ preview.innerHTML = renderMd(full); },
+        onDone(writes, full, meta){
+          if(!full.trim() || !meta.revision) throw new Error('没有收到完整初稿，请重试');
+          GENERATED = {text:full.trim(), revision:meta.revision};
+          preview.innerHTML = renderMd(full); $('#adoptActions').hidden = false;
+          status.textContent = '初稿已生成，尚未保存。采用后替换正文，原稿会保留历史版本。';
+        }
+      }, {generate:true, instructions:$('#writingRequest').value});
+    } catch(e){ status.textContent = e.message; }
+    finally { GENERATING = false; $('#generateDraft').disabled = false; $('#send').disabled = false; }
+  };
+  $('#adoptDraft').onclick = async () => {
+    if(!GENERATED) return;
+    const editor = $('#fBody');
+    if(editor && editor.value.trim() !== bodyText().trim()){
+      status.textContent = '正文有未保存的修改，请先保存，再重新生成。'; return;
+    }
+    $('#adoptDraft').disabled = true;
+    try {
+      await postJSON('/api/adopt_draft', {id:D.id, '正文':GENERATED.text, revision:GENERATED.revision});
+      GENERATED = null; $('#adoptActions').hidden = true; preview.hidden = true;
+      await reload('初稿已保存');
+      HISTORY = HISTORY.filter(m => !m._sys);
+      HISTORY.push({role:'assistant', content:'初稿已采用。想改哪一段，可以直接告诉我。', _sys:true});
+      saveHistory(); renderMsgs();
+      status.textContent = '已采用初稿，可以继续编辑正文或在右侧讨论。';
+    } catch(e){ status.textContent = e.message; }
+    finally { $('#adoptDraft').disabled = false; }
+  };
+  $('#dismissDraft').onclick = () => { preview.hidden = true; $('#adoptActions').hidden = true; GENERATED = null; status.textContent = '预览已收起，正文未改动。'; };
 }
 
 /* ---------- 启动 ---------- */
@@ -719,6 +774,7 @@ function renderBanner(){
 
   D = (STATE['稿件'] || []).find(x => x.id === DRAFT_ID);
   if(!D){
+    $('#generationBox').hidden = true;
     $('#dTitle').textContent = '没找到这篇稿子';
     $('#dSub').textContent = DRAFT_ID ? ('id：' + DRAFT_ID) : '地址里没带 id';
     $('#dPanel').innerHTML = '<div class="blank">从工作台点一篇稿件进来，地址会带上 ?id=dr-001。</div>';
@@ -732,6 +788,7 @@ function renderBanner(){
   renderPanel();
   renderMsgs();
   renderBanner();
+  initGeneration();
 
   $('#chTitle').textContent = D['选题标题'] || D.id;
   $('#chSub').textContent = STAGE_LABEL[curStage()] + ' · ' + (D['字数'] || 0) + ' 字';

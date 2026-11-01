@@ -15,10 +15,10 @@
 
 ## 要配 API Key 才能聊
 
-页面的对话是接真模型的，不配就跑不了。根目录建 `本地配置.json`：
+页面的对话接真实模型。打开「设置」，填写 API Key 并保存，配置只写入本机 `.env`，不纳入 Git。默认模型配置：
 
 ```json
-{ "api_key": "sk-...", "接口": "https://api.deepseek.com", "模型名": "deepseek-chat" }
+{ "接口": "https://api.deepseek.com", "模型名": "deepseek-flash" }
 ```
 
 这个文件不进仓库。不配也能用，只是不能对话，只能看数据、改字段。

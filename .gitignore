@@ -49,7 +49,6 @@ env/
 # ---------- 敏感信息（切勿入库） ----------
 .env
 .env.*
-!.env.example
 *.key
 *.pem
 secrets.json

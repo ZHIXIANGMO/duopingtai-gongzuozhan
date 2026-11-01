@@ -59,10 +59,11 @@ function renderMd(text){
   });
   s = s.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
   s = s.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  s = s.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
 
   const out = s.split(/\n{2,}/).map(chunk => {
     if(/^\u0000BLOCK\d+\u0000$/.test(chunk.trim())) return chunk.trim();
-    if(/^<h[23]>/.test(chunk.trim())) return chunk.trim();
+    if(/^<h[123]>/.test(chunk.trim())) return chunk.trim();
     const lines = chunk.split('\n');
     if(lines.every(l => /^\s*[-*]\s+/.test(l) || !l.trim())){
       const items = lines.filter(l => l.trim())
@@ -227,6 +228,7 @@ function renderSide(state, active){
         '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>', null)}
     </div>
     <div class="side-foot">
+      ${item('settings', 'settings.html', '设置', '', null)}
       <div class="deck" id="deck">
         ${roster.length ? roster.map(deckCard).join('') : '<div class="dc-empty">没读到身份文件</div>'}
         <div class="deck-info" id="deckInfo"></div>
@@ -362,10 +364,10 @@ function offlineBlock(host, msg){
 }
 
 /* ---------- 对话（SSE 流式） ---------- */
-async function chatStream(kind, id, messages, handlers){
-  const res = await fetch('/api/chat', {
+async function chatStream(kind, id, messages, handlers, options={}){
+  const res = await fetch(options.generate ? '/api/generate' : '/api/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({kind, id, messages, '身份': curIdent()})
+    body: JSON.stringify({kind, id, messages, '身份': curIdent(), '要求': options.instructions || ''})
   });
   if(!res.ok || !res.body){
     throw new Error('对话接口没响应');
@@ -389,17 +391,18 @@ async function chatStream(kind, id, messages, handlers){
       try{ obj = JSON.parse(chunk.slice(5).trim()); }catch(e){ continue; }
 
       if(obj.error){ throw new Error(obj.error); }
+      if(obj['修正'] !== undefined) full = obj['修正'];
       if(obj.delta){
         full += obj.delta;
         handlers.onDelta && handlers.onDelta(full);
       }
       if(obj.done){
-        handlers.onDone && handlers.onDone(obj['写入'] || [], full);
+        handlers.onDone && handlers.onDone(obj['写入'] || [], full, obj);
         return;
       }
     }
   }
-  handlers.onDone && handlers.onDone([], full);
+  throw new Error('连接中断，生成未完成，请重试');
 }
 
 /* ---------- 应用 AI 的修改 ---------- */

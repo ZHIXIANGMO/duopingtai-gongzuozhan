@@ -25,7 +25,7 @@
 python serve.py     # 双击 启动工作台.bat 等价；自动开 http://127.0.0.1:8777/，只监听回环
 ```
 
-对话要配 `本地配置.json` 的 api_key。排障、端口被占、常用命令 → [`project-memory/运行手册.md`](project-memory/运行手册.md)
+对话在设置页配 API Key，密钥写入本机 `.env`。排障、端口被占、常用命令 → [`project-memory/运行手册.md`](project-memory/运行手册.md)
 
 ## 2. 目录
 
@@ -39,7 +39,7 @@ serve.py          本地服务（纯标准库）    启动工作台.bat  双击�
 CLAUDE.md         指针（指向本文件）      AGENTS.md       本文件
 project-memory/   共享项目记忆          knowledge-outbox/ 跨项目知识候选
 数据/             全部私人内容，不进仓库（只 README.md 入库）
-本地配置.json      API Key，不进仓库     .archive/       历史版本，只读
+.env             密钥及机密配置，不进仓库 .archive/      历史版本，只读
 ```
 
 页面交互约定、卡片栈、视觉规范 → [`project-memory/交互与视觉.md`](project-memory/交互与视觉.md)
@@ -48,7 +48,7 @@ project-memory/   共享项目记忆          knowledge-outbox/ 跨项目知识�
 
 1. **零依赖。** 不引 npm、不引 pip、不引 CDN、不引框架。`serve.py` 只用标准库（模型接口用 `urllib`）。
 2. **文件是真源。** 新功能先想数据落在哪个文件、什么格式，再想页面。数据契约 → [`project-memory/数据契约.md`](project-memory/数据契约.md)
-3. **数据不进仓库。** 仓库是 PUBLIC，`数据/*` 和 `本地配置.json` 已在 .gitignore。别往仓库塞真实选题、稿件、运营数字。
+3. **数据不进仓库。** 仓库是 PUBLIC，`数据/*`、`.env`、`.env.*` 和旧 `本地配置.json` 已在 .gitignore。密钥、令牌等机密信息只存本机 `.env`，不跟踪、不提交、不推送。当前账号和人设是虚拟测试数据，继续用 Markdown；别往仓库塞真实选题、稿件、运营数字。
 4. **AI 改动要人工确认。** 不许做成 AI 直接落盘（应用内对话走 JSON 写入块，见数据契约.md 第 10 节）。
 5. **`.archive/` 只读。**
 6. **中文文件名是正常的。** 别改成英文。

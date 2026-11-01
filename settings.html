@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设置 · 内容矩阵</title><link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="app"><aside class="side" id="side"></aside><main class="main">
+  <div class="topbar"><div class="crumb"><b>设置</b></div><a href="topics.html" class="btn btn-sm">去写稿 →</a></div>
+  <div class="settings-body">
+    <div class="settings-heading"><h1>模型与技能</h1><p>选好模型，写稿和对话就会使用它。</p></div>
+    <form id="configForm">
+      <section class="settings-section">
+        <div class="settings-label"><h2>AI 模型</h2><p>支持 OpenAI 兼容的 Chat Completions 接口。</p></div>
+        <div class="settings-content"><div id="models"></div><button type="button" class="btn" id="addModel">添加模型</button></div>
+      </section>
+      <section class="settings-section">
+        <div class="settings-label"><h2>写作技能</h2><p>添加指令或导入 Markdown，再勾选给对应模型使用。只读取文字指令，不运行脚本。</p></div>
+        <div class="settings-content"><div id="skills"></div><button type="button" class="btn" id="addSkill">添加技能</button></div>
+      </section>
+      <div class="settings-actions"><button class="btn btn-primary" type="submit" id="saveConfig">保存设置</button><button type="button" class="btn" id="testModel">测试当前模型</button><span id="configStatus" role="status" aria-live="polite"></span></div>
+      <p class="settings-note">API Key 仅保存在本机 .env，不纳入 Git。测试会向所选接口发送一条简短请求。</p>
+    </form>
+  </div>
+</main></div><div class="toast" id="toast"></div>
+<script src="assets/app.js"></script><script src="assets/settings.js"></script>
+</body></html>

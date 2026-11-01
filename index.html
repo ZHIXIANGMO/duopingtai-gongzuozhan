@@ -187,7 +187,7 @@ function todosCard(){
     const g = t['目标'] || {};
     const href = g.kind === '稿件' ? 'draft.html?id=' + encodeURIComponent(g.id)
       : g.kind === '选题' ? 'topics.html?id=' + encodeURIComponent(g.id)
-      : g.kind === '灵感' ? 'index.html'
+      : g.kind === '灵感' ? 'topics.html'
       : 'data.html';
     return `<a class="td ${t['级别'] === 'red' ? 'red' : ''}" href="${href}">
       <div class="td-t">${esc(t['类型'])}</div>

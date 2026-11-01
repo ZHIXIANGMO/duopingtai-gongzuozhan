@@ -47,6 +47,8 @@
           </div>
         </div>
         <div class="topic-list" id="list"></div>
+        <div class="sec-head"><h2>灵感</h2><span>选好人设，直接开稿</span></div>
+        <div id="sparks"></div>
       </div>
 
       <div class="pane" id="pane"></div>
@@ -70,12 +72,13 @@ function sortTopics(list){
 }
 
 function renderList(){
+  renderSparks();
   const host = $('#list');
   const list = sortTopics(STATE['选题'] || []);
   $('#topCount').textContent = list.length + ' 条';
 
   if(!list.length){
-    host.innerHTML = '<div class="blank">还没有选题。<br>在 <b>数据/选题/</b> 里新建一个 md，或者去工作台把一条灵感孵化了。</div>';
+    host.innerHTML = '<div class="blank">还没有选题。点“记一条灵感”，就可以开始写稿。</div>';
     return;
   }
 
@@ -100,6 +103,19 @@ function renderList(){
 
   host.querySelectorAll('.tp').forEach(el => {
     el.addEventListener('click', () => { PICK = el.dataset.id; renderList(); renderPane(); });
+  });
+}
+
+function renderSparks(){
+  const who = (STATE['当前身份'] || {}).id;
+  const sparks = (STATE['灵感'] || []).filter(s => !s['关联身份'] || s['关联身份'] === who);
+  $('#sparks').innerHTML = sparks.map(s => `<div class="spark-row"><span>${esc(s['原话'] || s.id)}</span><button class="btn btn-sm" data-spark="${esc(s.id)}">${s['状态'] === '已孵化' ? '继续写稿' : '用这条写稿'}</button></div>`).join('') || '<div class="blank small">记下一句话，从这里长出初稿。</div>';
+  document.querySelectorAll('[data-spark]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await postJSON('/api/spark_draft', {'灵感':b.dataset.spark, '身份':who});
+      location.href = 'draft.html?id=' + encodeURIComponent(r.item.id);
+    } catch(e){ toast(e.message); b.disabled = false; }
   });
 }
 
@@ -139,7 +155,7 @@ function renderPane(){
         <span>优先级 <b>${esc(t['优先级'] || '—')}</b></span>
       </div>
 
-      <div class="sec-t">冲突四格 · 填不全就别往下走</div>
+      <div class="sec-t">冲突四格 · 帮你把观点想清楚</div>
       <div class="cf">
         ${conflictCard('正方', t['正方'], t.id)}
         ${conflictCard('反方', t['反方'], t.id)}
@@ -182,7 +198,7 @@ function renderPane(){
     ev.target.disabled = true;
     ev.target.textContent = '正在开稿…';
     try{
-      const r = await postJSON('/api/new_draft', { '选题': t.id });
+      const r = await postJSON('/api/new_draft', { '选题': t.id, '身份': (STATE['当前身份'] || {}).id });
       location.href = 'draft.html?id=' + encodeURIComponent(r.item.id);
     }catch(e){
       toast('没开成：' + e.message);
@@ -233,7 +249,7 @@ function renderPane(){
     inlineNew($('#list'), {
       placeholder: '一句话标题，回车就建',
       onSubmit: async v => {
-        const r = await postJSON('/api/new', {kind: '选题', '标题候选': v});
+        const r = await postJSON('/api/new', {kind: '选题', '标题候选': v, '身份': (STATE['当前身份'] || {}).id});
         PICK = r.item.id;
         await fresh();
         toast('建好了，右边补冲突四格');
@@ -245,9 +261,9 @@ function renderPane(){
     inlineNew($('#list'), {
       placeholder: '你听到的原话，回车就记',
       onSubmit: async v => {
-        await postJSON('/api/new', {kind: '灵感', '原话': v});
+        await postJSON('/api/new', {kind: '灵感', '原话': v, '身份': (STATE['当前身份'] || {}).id});
         await fresh();
-        toast('记下了，去首页待办里孵化');
+        toast('记下了，点击“用这条写稿”开始');
       }
     });
   });
