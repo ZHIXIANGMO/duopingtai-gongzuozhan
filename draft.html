@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>稿件 · 内容矩阵</title>
 <link rel="stylesheet" href="assets/app.css">
+<style>
+/* 对话落盘的附属 UI：断网提示条 + 归档回看列表。颜色全走 :root 变量 */
+.chat-note{flex:none;padding:12px 24px 0}
+.chat-arch{flex:none;border-bottom:1px solid var(--line);padding:8px 24px 12px}
+.chat-arch .dtbl{padding:0}
+.chat-arch .drow2{width:100%;border:0;background:none;cursor:pointer;font-family:inherit;
+  text-align:left;padding:7px 10px;border-radius:10px;transition:background .14s;color:var(--ink2)}
+.chat-arch .drow2:hover,.chat-arch .drow2.on{background:var(--bg)}
+.chat-arch .drow2-n{width:auto}
+</style>
 </head>
 <body>
 <div class="app">
@@ -41,7 +51,13 @@
           <div class="ch-t" id="chTitle">—</div>
           <div class="ch-s" id="chSub">这一阶段想干什么，直接说</div>
         </div>
+        <button class="btn btn-sm" id="chatHist" hidden>历史</button>
+        <button class="btn btn-sm" id="newChat">新起对话</button>
+        <span class="chip" id="viewingTag" hidden>在看旧对话</span>
+        <button class="btn btn-sm" id="backNow" hidden>回到当前</button>
       </div>
+      <div class="chat-note" id="chatNote" hidden></div>
+      <div class="chat-arch" id="chatArch" hidden></div>
       <div class="msgs" id="msgs"></div>
       <div class="composer">
         <div id="aiBanner"></div>
@@ -71,6 +87,10 @@ let TOPIC = null;          // 它挂的选题
 let HISTORY = [];
 let SENDING = false;
 let BODY_TAB = 'edit';     // 正文格：编辑 / 预览
+let ARCHIVES = [];         // 归档列表：[{文件,条数,时间}]
+let VIEWING = null;        // 正在回看的归档文件名；null = 当前对话
+let VIEW_MSGS = null;      // 回看时载入的旧对话
+let CHATLOG_DOWN = false;  // chatlog 接口连不上，降级用 localStorage 缓存
 
 const DRAFT_ID = new URLSearchParams(location.search).get('id') || '';
 
@@ -99,17 +119,64 @@ function redoNow(){
 
 function keyOf(){ return 'chat:稿件:' + DRAFT_ID; }
 
-function loadHistory(){
+/* 开场白只活在内存里，跟着当前阶段走，不落盘 */
+function openerNow(){
+  return { role:'assistant', content: OPENERS[curStage()] || OPENERS['讨论'], _sys:true };
+}
+
+function readLocal(){
   try{
     const raw = localStorage.getItem(keyOf());
-    HISTORY = raw ? JSON.parse(raw) : [];
-  }catch(e){ HISTORY = []; }
-  if(!HISTORY.length){
-    HISTORY = [{ role:'assistant', content: OPENERS[curStage()] || OPENERS['讨论'], _sys:true }];
-  }
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
 }
+
+/* 对话真源是服务端文件（数据/对话/）。localStorage 只当断网应急。
+   三条路：服务端有 → 用它的；没有而本地有 → 迁上去；连不上 → 本地顶着，顶部说一声 */
+async function loadHistory(){
+  const local = readLocal();
+  try{
+    const r = await getJSON('/api/chatlog?kind=' + encodeURIComponent('稿件') + '&id=' + encodeURIComponent(DRAFT_ID));
+    ARCHIVES = r['归档'] || [];
+    const conv = r['对话'] || [];
+    if(conv.length){
+      HISTORY = conv;
+    }else{
+      const mine = local.filter(m => !m._sys);
+      if(mine.length){
+        // 服务端还没记录、本地缓存里有 → 迁过去（条数为 0 表示服务端已有，忽略即可）
+        await postJSON('/api/chatlog', {kind:'稿件', id:DRAFT_ID, mode:'migrate',
+          '消息': mine.map(m => ({role:m.role, content:m.content}))});
+        HISTORY = mine;
+      }else{
+        HISTORY = [];
+      }
+      try{ localStorage.removeItem(keyOf()); }catch(e){}
+    }
+  }catch(e){
+    CHATLOG_DOWN = true;
+    HISTORY = local;
+    ARCHIVES = [];
+  }
+  if(!HISTORY.length) HISTORY = [openerNow()];
+}
+
+/* 应急缓存照存：服务连不上时靠它，连上了也不碍事（读的时候服务端优先） */
 function saveHistory(){
   try{ localStorage.setItem(keyOf(), JSON.stringify(HISTORY.slice(-40))); }catch(e){}
+}
+
+/* 追加一条到服务端。失败只提醒一次，不拦对话 */
+async function appendChatlog(m){
+  const msg = {role:m.role, content:m.content};
+  if(m['写入'] && m['写入'].length) msg['写入'] = m['写入'];
+  try{
+    await postJSON('/api/chatlog', {kind:'稿件', id:DRAFT_ID, mode:'append', '消息':msg});
+    if(CHATLOG_DOWN){ CHATLOG_DOWN = false; renderChatNote(); }
+  }catch(e){
+    toast('这条没存上（服务连不上）');
+  }
 }
 
 /* ---------- 头部 ---------- */
@@ -604,18 +671,42 @@ async function jump(stage){
 }
 
 /* ---------- 对话 ---------- */
+/* 写入操作条：当场聊出来的、重开页面翻出来的、归档里翻出来的，长得一样、都能点 */
+function writesBarHtml(writes){
+  return `<div class="writes"><div class="wt">AI 想改 <b>${writes.length}</b> 处：${
+    writes.map(w => esc(w.kind + ' ' + w.id)).join('、')}</div>
+    <button type="button" class="btn btn-sm btn-primary">应用</button></div>`;
+}
+
+function bindWritesBar(bar, writes){
+  bar.querySelector('button').addEventListener('click', async ev => {
+    ev.target.disabled = true;
+    const r = await applyWrites(writes);
+    ev.target.textContent = r.fail ? ('失败 ' + r.fail) : '已写入';
+    toast(r.fail ? '有 ' + r.fail + ' 处没写进去' : '已写进文件');
+    if(!r.fail) await reload('');
+  });
+}
+
 function msgHtml(m){
   const ai = m.role !== 'user';
+  const w = m['写入'];
   return `<div class="msg ${ai ? 'ai' : 'user'}">
     <div class="who">${ai ? 'AI' : '你'}</div>
     <div class="bubble">${renderMd(m.content)}</div>
+    ${w && w.length ? writesBarHtml(w) : ''}
   </div>`;
 }
 
-function renderMsgs(){
+function renderMsgs(list){
+  const msgs = list || HISTORY;
   const host = $('#msgs');
-  host.innerHTML = HISTORY.map(msgHtml).join('');
-  host.scrollTop = host.scrollHeight;
+  host.innerHTML = msgs.map(msgHtml).join('');
+  host.querySelectorAll('.msg').forEach((el, i) => {
+    const bar = el.querySelector('.writes');
+    if(bar && msgs[i] && msgs[i]['写入']) bindWritesBar(bar, msgs[i]['写入']);
+  });
+  host.scrollTop = VIEWING ? 0 : host.scrollHeight;
 }
 function scrollBottom(){
   const host = $('#msgs');
@@ -623,7 +714,7 @@ function scrollBottom(){
 }
 
 async function send(){
-  if(SENDING || GENERATING || !D) return;
+  if(SENDING || GENERATING || !D || VIEWING) return;
   const box = $('#input');
   const text = box.value.trim();
   if(!text) return;
@@ -631,8 +722,10 @@ async function send(){
   box.value = '';
   autoGrow(box);
 
-  HISTORY.push({ role:'user', content: text });
+  const userMsg = { role:'user', content: text };
+  HISTORY.push(userMsg);
   saveHistory();
+  appendChatlog(userMsg);
 
   const host = $('#msgs');
   if(!host.querySelector('.msg')) host.innerHTML = '';
@@ -659,23 +752,15 @@ async function send(){
       onDone(writes, full){
         const clean = (full || painted || '').trim();
         bubble.innerHTML = renderMd(clean) || '<span style="color:#B5B5B5">（这次没说话）</span>';
-        HISTORY.push({ role:'assistant', content: clean });
+        const aiMsg = { role:'assistant', content: clean };
+        if(writes && writes.length) aiMsg['写入'] = writes;
+        HISTORY.push(aiMsg);
         saveHistory();
+        appendChatlog(aiMsg);
 
         if(writes && writes.length){
-          const bar = document.createElement('div');
-          bar.className = 'writes';
-          bar.innerHTML = `<div class="wt">AI 想改 <b>${writes.length}</b> 处：${
-            writes.map(w => esc(w.kind + ' ' + w.id)).join('、')}</div>
-            <button class="btn btn-sm btn-primary">应用</button>`;
-          bar.querySelector('button').addEventListener('click', async ev => {
-            ev.target.disabled = true;
-            const r = await applyWrites(writes);
-            ev.target.textContent = r.fail ? ('失败 ' + r.fail) : '已写入';
-            toast(r.fail ? '有 ' + r.fail + ' 处没写进去' : '已写进文件');
-            if(!r.fail) await reload('');
-          });
-          aiWrap.appendChild(bar);
+          aiWrap.insertAdjacentHTML('beforeend', writesBarHtml(writes));
+          bindWritesBar(aiWrap.querySelector('.writes'), writes);
         }
         scrollBottom();
       }
@@ -689,6 +774,137 @@ async function send(){
     $('#send').disabled = false;
     box.focus();
   }
+}
+
+/* ---------- 新起对话 / 归档回看 ---------- */
+function renderChatNote(){
+  const el = $('#chatNote');
+  if(CHATLOG_DOWN){
+    el.hidden = false;
+    el.innerHTML = '<div class="banner"><b>对话记录没连上服务，先显示本地缓存。</b> 能接着聊，服务起来后会自动接上。</div>';
+  }else{
+    el.hidden = true;
+  }
+}
+
+function renderHistBtn(){
+  const b = $('#chatHist');
+  if(!b) return;
+  b.hidden = !ARCHIVES.length;
+  b.textContent = ARCHIVES.length ? ('历史 ' + ARCHIVES.length + ' 段') : '历史';
+}
+
+function renderArchList(){
+  const host = $('#chatArch');
+  host.innerHTML = ARCHIVES.length
+    ? '<div class="dtbl">' + ARCHIVES.map(a => `
+      <button type="button" class="drow2 ${VIEWING === a['文件'] ? 'on' : ''}" data-file="${esc(a['文件'])}" title="${esc(a['文件'])}">
+        <span class="drow2-a">${esc(String(a['时间'] || a['文件'] || ''))}</span>
+        <span class="drow2-n">${esc(String(a['条数'] == null ? '' : a['条数']))} 条</span>
+      </button>`).join('') + '</div>'
+    : '<div class="dtbl"><div class="drow2">还没归档过，聊过一段再收。</div></div>';
+  host.querySelectorAll('[data-file]').forEach(btn => {
+    btn.addEventListener('click', () => { viewArchive(btn.dataset.file); });
+  });
+}
+
+function toggleArchList(force){
+  const host = $('#chatArch');
+  host.hidden = force == null ? !host.hidden : !force;
+  if(!host.hidden) renderArchList();
+}
+
+/* 回看归档：旧对话只读，输入框停用，写建议的操作条照常能点（点了才落盘） */
+async function viewArchive(file){
+  if(!file) return;
+  if(VIEWING === file){ toggleArchList(false); return; }
+  if(SENDING || GENERATING){ toast('等这条说完，再翻旧对话'); return; }
+  try{
+    const r = await getJSON('/api/chatlog?kind=' + encodeURIComponent('稿件') + '&id=' +
+      encodeURIComponent(DRAFT_ID) + '&file=' + encodeURIComponent(file));
+    VIEWING = file;
+    VIEW_MSGS = r['对话'] || [];
+    toggleArchList(false);
+    $('#newChat').hidden = true;
+    $('#viewingTag').hidden = false;
+    $('#backNow').hidden = false;
+    const box = $('#input');
+    box.disabled = true;
+    box.placeholder = '在看旧对话，回到当前才能接着聊';
+    $('#send').disabled = true;
+    renderMsgs(VIEW_MSGS);
+  }catch(e){ toast('这段旧对话打不开：' + netErr(e)); }
+}
+
+function exitViewing(){
+  VIEWING = null;
+  VIEW_MSGS = null;
+  $('#newChat').hidden = false;
+  $('#viewingTag').hidden = true;
+  $('#backNow').hidden = true;
+  const box = $('#input');
+  box.disabled = false;
+  box.placeholder = '说你想干什么…';
+  $('#send').disabled = false;
+  renderMsgs();
+}
+
+/* 和 askBack 同一个弹窗，同一副骨架：原生 confirm 太丑，也说不清会动什么 */
+function askNewChat(){
+  return new Promise(resolve => {
+    const mask = $('#dmask'), box = $('#dmodal');
+    box.innerHTML = `
+      <div class="dm-h">新起一段对话？</div>
+      <div class="dm-b">旧对话会收进抽屉，一个字不删。新开一个？</div>
+      <div class="dm-n">收起来的在「历史」里，随时翻回来看。</div>
+      <div class="dm-f">
+        <button class="btn" id="dmNo">先不开</button>
+        <button class="btn btn-primary" id="dmYes">新起对话</button>
+      </div>`;
+    mask.classList.add('on');
+
+    const done = ok => {
+      mask.classList.remove('on');
+      document.removeEventListener('keydown', key);
+      setTimeout(() => { box.innerHTML = ''; }, 200);
+      resolve(ok);
+    };
+    const key = e => { if(e.key === 'Escape') done(false); };
+
+    $('#dmNo').addEventListener('click', () => done(false));
+    $('#dmYes').addEventListener('click', () => done(true));
+    mask.addEventListener('click', e => { if(e.target === mask) done(false); });
+    document.addEventListener('keydown', key);
+    setTimeout(() => $('#dmYes').focus(), 60);
+  });
+}
+
+/* 404/断网时 fetch 抛的是 JSON 解析错误或 TypeError，别把原始报错甩人脸上 */
+function netErr(e){
+  const msg = String((e && e.message) || '');
+  return /not valid JSON|Unexpected token|Failed to fetch|NetworkError/i.test(msg) ? '服务连不上' : msg;
+}
+
+async function refreshArchives(){
+  try{
+    const r = await getJSON('/api/chatlog?kind=' + encodeURIComponent('稿件') + '&id=' + encodeURIComponent(DRAFT_ID));
+    ARCHIVES = r['归档'] || [];
+  }catch(e){ /* 列表拿不到就不显示入口，聊天不受影响 */ }
+  renderHistBtn();
+}
+
+async function newChat(){
+  if(!D || VIEWING || SENDING || GENERATING) return;
+  if(!HISTORY.some(m => !m._sys)){ toast('这段还没聊过什么，不用新起'); return; }
+  if(!await askNewChat()) return;
+  try{
+    await postJSON('/api/chatlog', {kind:'稿件', id:DRAFT_ID, mode:'archive'});
+    HISTORY = [openerNow()];
+    saveHistory();
+    renderMsgs();
+    await refreshArchives();
+    toast('旧对话收进抽屉了');
+  }catch(e){ toast('没归档上：' + netErr(e)); }
 }
 
 /* ---------- 重新拉数据 ---------- */
@@ -783,7 +999,9 @@ function initGeneration(){
   }
 
   TOPIC = (STATE['选题'] || []).find(t => t.id === D['选题']) || null;
-  loadHistory();
+  await loadHistory();
+  renderChatNote();
+  renderHistBtn();
   renderHead();
   renderPanel();
   renderMsgs();
@@ -799,6 +1017,9 @@ function initGeneration(){
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
   });
   $('#send').addEventListener('click', send);
+  $('#newChat').addEventListener('click', newChat);
+  $('#backNow').addEventListener('click', exitViewing);
+  $('#chatHist').addEventListener('click', () => toggleArchList());
 
   // 从队列点某一格进来：直接落到那一步
   const want = new URLSearchParams(location.search).get('stage');

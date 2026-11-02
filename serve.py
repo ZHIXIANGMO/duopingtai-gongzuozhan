@@ -39,6 +39,7 @@ DIRS = {
 PUB_CSV = os.path.join(DATA, "投放.csv")
 ASSET_DIR = os.path.join(DATA, "素材")
 SETTINGS = os.path.join(DATA, "设置.json")
+CHAT_DIR = os.path.join(DATA, "对话")
 LOCAL_CONF = os.path.join(ROOT, "本地配置.json")
 ENV_FILE = os.path.join(ROOT, ".env")
 ENV_LOCK = threading.RLock()
@@ -611,6 +612,149 @@ def save_asset(draft_id, name, b64):
     return raw
 
 
+# ---------------------------------------------------------------- 对话记录
+
+# 对话真源是 数据/对话/<稿件id>.jsonl：一行一条 JSON，追加式、全量不截断。
+# 前端的 localStorage 只是断网应急缓存，读的时候以这里的文件为准。
+CHAT_ID_RE = re.compile(r"^dr-[0-9]+$")
+ARCHIVE_RE = re.compile(r"^dr-[0-9]+\.[0-9]{8}-[0-9]{6}\.jsonl$")
+
+
+def chat_file(item_id, archive=""):
+    """主文件 dr-001.jsonl；带 archive 时给归档文件的路径。
+    名字先过白名单再拼路径，别让 ../ 之类混进来。"""
+    if not CHAT_ID_RE.fullmatch(str(item_id or "")):
+        raise ValueError("稿件号不对：%r" % item_id)
+    if archive:
+        name = os.path.basename(str(archive))
+        if not ARCHIVE_RE.fullmatch(name) or not name.startswith(item_id + "."):
+            raise ValueError("归档文件名不对：%r" % archive)
+        return os.path.join(CHAT_DIR, name)
+    return os.path.join(CHAT_DIR, "%s.jsonl" % item_id)
+
+
+def read_chatlog(path):
+    """读 jsonl。坏行跳过，别让一行坏数据拖垮整段对话。文件不存在就当没有。"""
+    if not os.path.isfile(path):
+        return []
+    out = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(obj, dict) and obj.get("role") in ("user", "assistant"):
+                out.append(obj)
+    return out
+
+
+def chat_archives(item_id):
+    """同一篇稿的归档 <id>.<时间>.jsonl，按时间倒序。"""
+    out = []
+    if not os.path.isdir(CHAT_DIR):
+        return out
+    prefix = item_id + "."
+    for name in os.listdir(CHAT_DIR):
+        if not name.startswith(prefix) or not ARCHIVE_RE.fullmatch(name):
+            continue
+        stamp = name[len(prefix):-len(".jsonl")]
+        try:
+            when = datetime.strptime(stamp, "%Y%m%d-%H%M%S").strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            when = stamp
+        out.append({"文件": name, "条数": len(read_chatlog(os.path.join(CHAT_DIR, name))),
+                    "时间": when})
+    out.sort(key=lambda x: x["文件"], reverse=True)
+    return out
+
+
+def chatlog_get(kind, item_id, archive=""):
+    """读对话。不带 file 读主文件并附归档清单；带 file 只读那一份归档，只读。"""
+    if kind != "稿件":
+        raise ValueError("对话记录只挂在稿件上")
+    if archive:
+        path = chat_file(item_id, archive)
+        if not os.path.isfile(path):
+            raise ValueError("找不到这段归档：%s" % archive)
+        return {"对话": read_chatlog(path), "只读": True}
+    return {"对话": read_chatlog(chat_file(item_id)), "归档": chat_archives(item_id)}
+
+
+def chatlog_post(payload):
+    """三种 mode：append 补时间追加一条；migrate 服务端还没记录时把本地缓存整包
+    搬上来；archive 把主文件改名收进抽屉。都只动对话文件，不碰稿件正文。"""
+    kind = str(payload.get("kind") or "")
+    if kind != "稿件":
+        raise ValueError("对话记录只挂在稿件上")
+    item_id = str(payload.get("id") or "")
+    mode = str(payload.get("mode") or "")
+    main = chat_file(item_id)
+
+    if mode == "append":
+        msg = payload.get("消息")
+        if not isinstance(msg, dict):
+            raise ValueError("消息格式不对")
+        role = str(msg.get("role") or "")
+        if role not in ("user", "assistant"):
+            raise ValueError("role 只能是 user 或 assistant")
+        content = str(msg.get("content") or "")
+        if not content.strip():
+            raise ValueError("消息内容是空的")
+        row = {"role": role, "content": content,
+               "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        if isinstance(msg.get("写入"), list) and msg["写入"]:
+            row["写入"] = msg["写入"]  # AI 的写建议原样存；落不落盘由人点确认
+        os.makedirs(CHAT_DIR, exist_ok=True)
+        with open(main, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return {}
+
+    if mode == "migrate":
+        msgs = payload.get("消息")
+        if not isinstance(msgs, list):
+            raise ValueError("消息列表不对")
+        if os.path.isfile(main):
+            return {"条数": 0}  # 服务端已有记录，本地旧缓存不再灌一遍
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rows = []
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            role = str(m.get("role") or "")
+            content = str(m.get("content") or "")
+            if role not in ("user", "assistant") or not content.strip():
+                continue
+            row = {"role": role, "content": content, "time": now}
+            if isinstance(m.get("写入"), list) and m["写入"]:
+                row["写入"] = m["写入"]
+            rows.append(row)
+        if rows:
+            os.makedirs(CHAT_DIR, exist_ok=True)
+            with open(main, "w", encoding="utf-8") as f:
+                for row in rows:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return {"条数": len(rows)}
+
+    if mode == "archive":
+        if not os.path.isfile(main):
+            raise ValueError("这段还没聊过，没有可归档的")
+        os.makedirs(CHAT_DIR, exist_ok=True)
+        stamp = datetime.now()
+        name = "%s.%s.jsonl" % (item_id, stamp.strftime("%Y%m%d-%H%M%S"))
+        # 同一秒里连点两次会撞名，往后挪一秒，保证文件名始终是白名单形状
+        while os.path.exists(os.path.join(CHAT_DIR, name)):
+            stamp += timedelta(seconds=1)
+            name = "%s.%s.jsonl" % (item_id, stamp.strftime("%Y%m%d-%H%M%S"))
+        os.replace(main, os.path.join(CHAT_DIR, name))
+        return {"归档": name}
+
+    raise ValueError("mode 只能是 append / migrate / archive")
+
+
 # ---------------------------------------------------------------- 日志
 
 def append_log(类型, 对象, 动作, 备注=""):
@@ -826,6 +970,88 @@ def write_env_section(key, value):
         with open(temp, "w", encoding="utf-8") as f:
             f.write("\n".join(out) + "\n")
         os.replace(temp, ENV_FILE)
+
+
+# ---------------------------------------------------------------- 数据库位置
+
+# 数据库位置可配（打包成应用后，用户要把数据放任意盘）。只认 .env 的
+# DSH_LOCAL_SETTINGS，不走 settings() 的旧文件兜底：这一步要在
+# migrate_private_config() 之前跑，兜底会去旧位置读 设置.json，读错地方。
+def setup_data_root():
+    """启动时按 .env 把 DATA 指到自定义位置，重算全部路径常量。
+    位置无效或建不出来就退回默认，不许启动直接崩。返回 True = 用了自定义位置。"""
+    global DATA, DIRS, PUB_CSV, ASSET_DIR, SETTINGS, CHAT_DIR, LOG_CSV
+    try:
+        private = read_env_section("DSH_LOCAL_SETTINGS")
+    except ValueError:
+        private = None  # .env 格式坏了留给后面的迁移逻辑去报，这里先用默认位置
+    where = str((private or {}).get("数据库位置") or "").strip()
+    if not where:
+        return False
+    if not re.fullmatch(r"[A-Za-z]:[/\\].+", where):
+        print("  数据库位置不是 Windows 绝对路径，先用默认位置：%s" % where)
+        return False
+    try:
+        os.makedirs(where, exist_ok=True)
+    except OSError as exc:
+        print("  数据库位置建不出来（%s），先用默认位置：%s" % (exc, where))
+        return False
+    DATA = where
+    DIRS = {"身份": os.path.join(DATA, "身份"), "账号": os.path.join(DATA, "账号"),
+            "灵感": os.path.join(DATA, "灵感"), "选题": os.path.join(DATA, "选题"),
+            "稿件": os.path.join(DATA, "稿件")}
+    PUB_CSV = os.path.join(DATA, "投放.csv")
+    ASSET_DIR = os.path.join(DATA, "素材")
+    SETTINGS = os.path.join(DATA, "设置.json")
+    CHAT_DIR = os.path.join(DATA, "对话")
+    LOG_CSV = os.path.join(DATA, "日志.csv")
+    return True
+
+
+# 换位置只写 .env，运行时不热切换：DIRS 这些全局被各个线程引用，中途换会把
+# 两份数据搅在一起。统一重启生效，这是刻意设计，别改成现场切换。
+def save_data_location(payload):
+    """设置页「数据库位置」的保存口。校验过了写进 .env；搬迁只复制不删，
+    旧位置一个文件都不动，旧目录删不删由用户自己决定。"""
+    where = str(payload.get("数据库位置") or "").strip()
+    if not where:
+        raise ValueError("先填一个文件夹路径，例如 D:\\我的写作数据")
+    want = os.path.normpath(where)
+    if want == os.path.normpath(DATA):
+        return {"需重启": False, "消息": "和现在的位置一样，没有改动。"}
+    if not re.fullmatch(r"[A-Za-z]:[/\\].+", where):
+        raise ValueError("要填 Windows 绝对路径，例如 D:\\我的写作数据")
+    if not os.path.splitdrive(want)[1].strip("\\/"):
+        raise ValueError("不能直接用整个盘（如 D:\\），指到一个文件夹")
+    root = os.path.normpath(ROOT)
+    if want == root or want.startswith(root + os.sep):
+        raise ValueError("位置不能放在程序文件夹里面，数据要放到外面")
+    try:
+        os.makedirs(want, exist_ok=True)
+    except OSError as exc:
+        raise ValueError("文件夹建不出来：%s" % exc)
+
+    if payload.get("搬迁"):
+        # 目标里已经有同名数据就停手：硬拷会把两份混在一起，分不清谁是谁
+        marks = ["投放.csv", "日志.csv", "设置.json"] + list(DIRS) + ["技能", "素材", "对话"]
+        clash = [m for m in marks if os.path.exists(os.path.join(want, m))]
+        if clash:
+            raise ValueError("目标位置已有数据（%s），请换空目录或手动确认" % "、".join(clash))
+        shutil.copytree(DATA, want, dirs_exist_ok=True)
+        missing = [m for m in ("投放.csv", "日志.csv") + list(DIRS)
+                   if not os.path.exists(os.path.join(want, m))]
+        if missing:
+            # 半路出错的兜底；旧数据原封没动
+            raise ValueError("搬过去之后缺了：%s。旧数据都在原位置，没动。" % "、".join(missing))
+
+    with ENV_LOCK:
+        s = settings()
+        s["数据库位置"] = want
+        write_env_section("DSH_LOCAL_SETTINGS", s)
+        if str(read_env_section("DSH_LOCAL_SETTINGS").get("数据库位置") or "") != want:
+            raise ValueError(".env 保存校验失败，位置没写进去")
+    return {"需重启": True,
+            "消息": "已保存。关闭工作台窗口，重新双击 启动工作台.bat 生效。"}
 
 
 def migrate_private_config():
@@ -1515,7 +1741,9 @@ def build_messages(state, kind, item_id, history):
             n_pub=len(state["投放"]))
 
     msgs = [{"role": "system", "content": system + "\n\n" + task + skill_prompt()}]
-    for m in (history or [])[-12:]:
+    # 对话记录在 数据/对话/ 里全量落盘、永不截断；这里只取最近 24 条喂模型，
+    # 控制上下文长度。「存全量、喂 24」是产品决定，改这里别动存储。
+    for m in (history or [])[-24:]:
         role = "assistant" if m.get("role") == "assistant" else "user"
         content = str(m.get("content") or "").strip()
         if content:

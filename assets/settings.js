@@ -59,13 +59,49 @@ function renderConfig(){
 }
 async function saveConfig(){
   collectConfig();
+  // 数据库位置走自己的保存口，别跟着模型设置一起发过去
+  delete CONFIG['数据库位置']; delete CONFIG['默认位置'];
   CONFIG = await postJSON('/api/settings', CONFIG);
+  delete CONFIG['数据库位置']; delete CONFIG['默认位置'];
   DIRTY = false; renderConfig(); configStatus('已保存，立即生效');
 }
+let DB = {cur:'', def:'', next:''};
+
+function renderDb(){
+  const now = $('#dbNow');
+  if(!now) return;
+  if(!DB.cur){
+    now.textContent = '没读到当前位置。先把工作台更新到新版，这一块才用得了。';
+    return;
+  }
+  const where = DB.cur === DB.def ? '（默认位置）' : '（自己设过的位置）';
+  now.innerHTML = '现在放在：<b>' + esc(DB.cur) + '</b>' + where +
+    (DB.next ? '<br>下次启动用：<b>' + esc(DB.next) + '</b>，重启才搬过去。' : '');
+}
+
 (async () => {
   await boot('settings');
   try { CONFIG = await getJSON('/api/settings'); renderConfig(); }
   catch(e){ configStatus('读取设置失败：' + e.message); return; }
+  // 位置字段单拎出来，别混进模型表单（存和发两头都剥干净，见 saveConfig）
+  DB = {cur: CONFIG['数据库位置'] || '', def: CONFIG['默认位置'] || '', next: ''};
+  delete CONFIG['数据库位置']; delete CONFIG['默认位置'];
+  renderDb();
+  $('#dbForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const stat = $('#dbStatus');
+    const path = $('#dbPath').value.trim();
+    if(!path){ stat.textContent = '先填一个文件夹路径，例如 D:\\我的写作数据'; return; }
+    if(path === DB.cur && !DB.next){ stat.textContent = '和现在放的是同一个地方，不用换。'; return; }
+    $('#saveDb').disabled = true;
+    try{
+      await postJSON('/api/settings', {'数据库位置': path, '搬迁': $('#dbMove').checked});
+      DB.next = path;
+      renderDb();
+      stat.textContent = '已保存。关掉工作台窗口，重新双击 启动工作台.bat 就生效了。';
+    }catch(err){ stat.textContent = err.message; }
+    finally{ $('#saveDb').disabled = false; }
+  });
   $('#configForm').addEventListener('input', () => { DIRTY = true; configStatus('有未保存的修改'); });
   $('#addModel').onclick = () => {
     collectConfig(); const id = configId('model');
