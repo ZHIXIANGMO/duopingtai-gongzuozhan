@@ -17,6 +17,8 @@ import secrets
 import shutil
 import sys
 import threading
+import tempfile
+from functools import wraps
 import urllib.error
 import urllib.request
 import webbrowser
@@ -43,6 +45,34 @@ CHAT_DIR = os.path.join(DATA, "对话")
 LOCAL_CONF = os.path.join(ROOT, "本地配置.json")
 ENV_FILE = os.path.join(ROOT, ".env")
 ENV_LOCK = threading.RLock()
+DATA_LOCK = threading.RLock()
+
+
+def data_locked(fn):
+    @wraps(fn)
+    def call(*args, **kwargs):
+        with DATA_LOCK:
+            return fn(*args, **kwargs)
+    return call
+
+
+def entity_path(kind, item_id):
+    if kind not in DIRS or not re.fullmatch(r"[A-Za-z]+-[0-9]+", str(item_id or "")):
+        raise ValueError("类型或编号不正确")
+    return os.path.join(DIRS[kind], item_id + ".md")
+
+
+def atomic_text(path, text):
+    fd, temp = tempfile.mkstemp(prefix=".save-", suffix=".tmp", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
+    finally:
+        if os.path.exists(temp):
+            os.remove(temp)
 
 PORT = 8777
 WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"]
@@ -125,8 +155,7 @@ def write_md(path, meta, body, kind):
         if k not in order and str(v).strip() != "":
             lines.append("%s: %s" % (k, str(v).replace("\n", " ")))
     lines.append("---")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n\n" + (body or ""))
+    atomic_text(path, "\n".join(lines) + "\n\n" + (body or ""))
 
 
 def list_entity(kind):
@@ -152,12 +181,13 @@ def list_entity(kind):
     return out
 
 
+@data_locked
 def save_entity(kind, item_id, fields=None, body=None):
     """按 id 找到文件写回。fields 里给空字符串就是清空该字段。"""
     d = DIRS.get(kind)
     if not d:
         raise ValueError("未知的类型：%s" % kind)
-    path = os.path.join(d, "%s.md" % item_id)
+    path = entity_path(kind, item_id)
     if not os.path.isfile(path):
         raise ValueError("找不到文件：%s" % path)
 
@@ -255,6 +285,7 @@ def flatten_heads(text):
     return "\n".join(out)
 
 
+@data_locked
 def save_section(kind, item_id, section, text):
     """人设页按块编辑：一次只动一个小节。"""
     d = DIRS.get(kind)
@@ -262,7 +293,7 @@ def save_section(kind, item_id, section, text):
         raise ValueError("未知的类型：%s" % kind)
     if not str(section or "").strip():
         raise ValueError("没说改哪一小节")
-    path = os.path.join(d, "%s.md" % item_id)
+    path = entity_path(kind, item_id)
     if not os.path.isfile(path):
         raise ValueError("找不到文件：%s" % path)
 
@@ -276,8 +307,12 @@ def save_section(kind, item_id, section, text):
             meta["重做"] = ",".join(redo)
         # 改的是正文：后面做过的配图/排版就对不上了，跟 save_entity 一条规矩
         if str(section).strip() == "正文":
+            # 存储保留标题降一级，避免文章标题被当作业务小节。
+            text = "\n".join("#" + line if line.startswith("## ") and line[3:].strip() in KNOWN_SECTIONS else line
+                             for line in text.splitlines())
             before = sections_of(old_body).get("正文") or ""
             if text.strip() != before.strip():
+                meta.pop("正文确认", None)
                 for s in STAGES[STAGES.index("正文") + 1:]:
                     name = STAGE_SECTION.get(s)
                     if name and s not in redo and has_product(meta, sections_of(old_body), s):
@@ -354,84 +389,6 @@ def redo_list(item):
     return [x.strip() for x in raw.split(",") if x.strip() in STAGES]
 
 
-def archive_section(item_id, stage, text):
-    """作废的产物不删，挪进 .历史/作废，以后想捞还能捞。"""
-    d = os.path.join(DATA, ".历史", "作废")
-    try:
-        os.makedirs(d, exist_ok=True)
-        name = "%s.%s.%s.md" % (item_id, stage, datetime.now().strftime("%Y%m%d-%H%M%S"))
-        with open(os.path.join(d, name), "w", encoding="utf-8") as f:
-            f.write("## %s\n\n%s\n" % (STAGE_SECTION.get(stage, stage), text))
-        return os.path.join(".历史", "作废", name)
-    except OSError:
-        return ""
-
-
-def advance_stage(kind, item_id, target, note=""):
-    """把稿件推到某个阶段。
-
-    往回走：这一段之后已经做出来的产物标「待重做」，内容先留着给人看。
-    再往前走回到那一格：标过待重做的产物挪进 .历史/作废，小节清空，重新开。
-    """
-    if kind != "稿件":
-        raise ValueError("只有稿件有阶段")
-    target = str(target or "").strip()
-    if target not in STAGES:
-        raise ValueError("没有这个阶段：%s" % target)
-    path = os.path.join(DIRS["稿件"], "%s.md" % item_id)
-    if not os.path.isfile(path):
-        raise ValueError("找不到稿件：%s" % item_id)
-
-    meta, body = parse_md(path)
-    cur = stage_of(meta)
-    ci, ti = STAGES.index(cur), STAGES.index(target)
-    redo = redo_list(meta)
-    secs = sections_of(body)
-    events = []
-
-    if ti < ci:
-        for s in STAGES[ti + 1:]:
-            if s not in redo and has_product(meta, secs, s):
-                redo.append(s)
-        if redo:
-            names = [STAGE_LABEL.get(x, x) for x in STAGES if x in redo]
-            events.append("%s 待重做" % "、".join(names))
-    elif ti > ci:
-        for s in STAGES[ci:ti + 1]:
-            if s not in redo:
-                continue
-            name = STAGE_SECTION.get(s)
-            old = (secs.get(name) or "").strip() if name else ""
-            if old:
-                archive_section(item_id, s, old)
-            if name:
-                body = rewrite_section(body, name, "")
-            # 配图和排版的产物记在字段上，重开时一起清掉，否则「重做」等于没做
-            if s == "配图":
-                meta.pop("配图形式", None)
-            if s == "排版":
-                meta.pop("排版", None)
-            events.append("%s 作废重开" % STAGE_LABEL.get(s, s))
-            redo.remove(s)
-        skipped = [s for s in STAGES[ci + 1:ti] if s not in redo]
-        if skipped:
-            events.append("跳过 %s" % "、".join(skipped))
-
-    meta["阶段"] = target
-    meta["重做"] = ",".join(redo)
-    meta["更新"] = date.today().isoformat()
-    meta.pop("状态", None)  # 阶段接管了，旧的别留在文件里
-    snapshot(path, "稿件")
-    write_md(path, meta, body, "稿件")
-    append_log("阶段", item_id, "%s → %s" % (cur, target),
-               note or "；".join(events))
-
-    fresh, fresh_body = parse_md(path)
-    fresh["正文"] = fresh_body
-    fresh["阶段"] = target
-    return fresh
-
-
 # ---------------------------------------------------------------- 开稿
 
 DRAFT_TEMPLATE = """## 素材
@@ -464,12 +421,21 @@ def next_id(kind, prefix):
     return "%s-%03d" % (prefix, (max(nums) + 1) if nums else 1)
 
 
+@data_locked
 def new_entity(kind, payload):
     """页面上直接建一条，不用手动去写 md。只填空壳，内容还是得聊出来。"""
     today = date.today().isoformat()
     ident = str(payload.get("身份") or "").strip() or settings().get("身份") or ""
 
-    if kind == "灵感":
+    if kind == "身份":
+        required = {k: str(payload.get(k) or "").strip() for k in ("名称", "定位", "读者")}
+        if any(is_blank(v) for v in required.values()):
+            raise ValueError("请填写 IP 名称、赛道和目标读者")
+        nid = next_id("身份", "per")
+        meta = {"id": nid, **required, "创建": today}
+        body = "\n\n".join("## " + k for k in PERSONA_SECTIONS) + "\n"
+
+    elif kind == "灵感":
         text = str(payload.get("原话") or "").strip()
         if not text:
             raise ValueError("先写一句原话")
@@ -491,6 +457,8 @@ def new_entity(kind, payload):
         body = "## 必须写进去的细节\n\n（待补：能撑住这个题的真实经历或数字。）\n"
 
     elif kind == "账号":
+        if not any(p["id"] == ident for p in list_entity("身份")):
+            raise ValueError("请先选择有效 IP")
         name = str(payload.get("账号名") or "").strip()
         plat = str(payload.get("平台") or "").strip()
         if plat not in PLATFORMS:
@@ -513,6 +481,7 @@ def new_entity(kind, payload):
     return fresh
 
 
+@data_locked
 def new_draft(topic_id, ident_id=""):
     """从一条选题开一篇新稿，直接落在第一阶段「讨论」。"""
     topic_id = str(topic_id or "").strip()
@@ -528,6 +497,10 @@ def new_draft(topic_id, ident_id=""):
 
     if not ident_id:
         ident_id = (id_list(topic.get("目标身份")) or [settings().get("身份") or ""])[0]
+    if not any(p["id"] == ident_id for p in list_entity("身份")):
+        raise ValueError("请先建立并选择 IP")
+    if not belongs(topic.get("目标身份"), ident_id):
+        raise ValueError("选题不属于当前 IP")
 
     did = next_id("稿件", "dr")
     meta = {
@@ -684,6 +657,7 @@ def chatlog_get(kind, item_id, archive=""):
     return {"对话": read_chatlog(chat_file(item_id)), "归档": chat_archives(item_id)}
 
 
+@data_locked
 def chatlog_post(payload):
     """三种 mode：append 补时间追加一条；migrate 服务端还没记录时把本地缓存整包
     搬上来；archive 把主文件改名收进抽屉。都只动对话文件，不碰稿件正文。"""
@@ -693,6 +667,7 @@ def chatlog_post(payload):
     item_id = str(payload.get("id") or "")
     mode = str(payload.get("mode") or "")
     main = chat_file(item_id)
+    draft_context(item_id)
 
     if mode == "append":
         msg = payload.get("消息")
@@ -706,6 +681,10 @@ def chatlog_post(payload):
             raise ValueError("消息内容是空的")
         row = {"role": role, "content": content,
                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        if msg.get("message_id"):
+            row["message_id"] = str(msg["message_id"])
+            if any(m.get("message_id") == row["message_id"] for m in read_chatlog(main)):
+                return {}
         if isinstance(msg.get("写入"), list) and msg["写入"]:
             row["写入"] = msg["写入"]  # AI 的写建议原样存；落不落盘由人点确认
         os.makedirs(CHAT_DIR, exist_ok=True)
@@ -977,83 +956,6 @@ def write_env_section(key, value):
 # 数据库位置可配（打包成应用后，用户要把数据放任意盘）。只认 .env 的
 # DSH_LOCAL_SETTINGS，不走 settings() 的旧文件兜底：这一步要在
 # migrate_private_config() 之前跑，兜底会去旧位置读 设置.json，读错地方。
-def setup_data_root():
-    """启动时按 .env 把 DATA 指到自定义位置，重算全部路径常量。
-    位置无效或建不出来就退回默认，不许启动直接崩。返回 True = 用了自定义位置。"""
-    global DATA, DIRS, PUB_CSV, ASSET_DIR, SETTINGS, CHAT_DIR, LOG_CSV
-    try:
-        private = read_env_section("DSH_LOCAL_SETTINGS")
-    except ValueError:
-        private = None  # .env 格式坏了留给后面的迁移逻辑去报，这里先用默认位置
-    where = str((private or {}).get("数据库位置") or "").strip()
-    if not where:
-        return False
-    if not re.fullmatch(r"[A-Za-z]:[/\\].+", where):
-        print("  数据库位置不是 Windows 绝对路径，先用默认位置：%s" % where)
-        return False
-    try:
-        os.makedirs(where, exist_ok=True)
-    except OSError as exc:
-        print("  数据库位置建不出来（%s），先用默认位置：%s" % (exc, where))
-        return False
-    DATA = where
-    DIRS = {"身份": os.path.join(DATA, "身份"), "账号": os.path.join(DATA, "账号"),
-            "灵感": os.path.join(DATA, "灵感"), "选题": os.path.join(DATA, "选题"),
-            "稿件": os.path.join(DATA, "稿件")}
-    PUB_CSV = os.path.join(DATA, "投放.csv")
-    ASSET_DIR = os.path.join(DATA, "素材")
-    SETTINGS = os.path.join(DATA, "设置.json")
-    CHAT_DIR = os.path.join(DATA, "对话")
-    LOG_CSV = os.path.join(DATA, "日志.csv")
-    return True
-
-
-# 换位置只写 .env，运行时不热切换：DIRS 这些全局被各个线程引用，中途换会把
-# 两份数据搅在一起。统一重启生效，这是刻意设计，别改成现场切换。
-def save_data_location(payload):
-    """设置页「数据库位置」的保存口。校验过了写进 .env；搬迁只复制不删，
-    旧位置一个文件都不动，旧目录删不删由用户自己决定。"""
-    where = str(payload.get("数据库位置") or "").strip()
-    if not where:
-        raise ValueError("先填一个文件夹路径，例如 D:\\我的写作数据")
-    want = os.path.normpath(where)
-    if want == os.path.normpath(DATA):
-        return {"需重启": False, "消息": "和现在的位置一样，没有改动。"}
-    if not re.fullmatch(r"[A-Za-z]:[/\\].+", where):
-        raise ValueError("要填 Windows 绝对路径，例如 D:\\我的写作数据")
-    if not os.path.splitdrive(want)[1].strip("\\/"):
-        raise ValueError("不能直接用整个盘（如 D:\\），指到一个文件夹")
-    root = os.path.normpath(ROOT)
-    if want == root or want.startswith(root + os.sep):
-        raise ValueError("位置不能放在程序文件夹里面，数据要放到外面")
-    try:
-        os.makedirs(want, exist_ok=True)
-    except OSError as exc:
-        raise ValueError("文件夹建不出来：%s" % exc)
-
-    if payload.get("搬迁"):
-        # 目标里已经有同名数据就停手：硬拷会把两份混在一起，分不清谁是谁
-        marks = ["投放.csv", "日志.csv", "设置.json"] + list(DIRS) + ["技能", "素材", "对话"]
-        clash = [m for m in marks if os.path.exists(os.path.join(want, m))]
-        if clash:
-            raise ValueError("目标位置已有数据（%s），请换空目录或手动确认" % "、".join(clash))
-        shutil.copytree(DATA, want, dirs_exist_ok=True)
-        missing = [m for m in ("投放.csv", "日志.csv") + list(DIRS)
-                   if not os.path.exists(os.path.join(want, m))]
-        if missing:
-            # 半路出错的兜底；旧数据原封没动
-            raise ValueError("搬过去之后缺了：%s。旧数据都在原位置，没动。" % "、".join(missing))
-
-    with ENV_LOCK:
-        s = settings()
-        s["数据库位置"] = want
-        write_env_section("DSH_LOCAL_SETTINGS", s)
-        if str(read_env_section("DSH_LOCAL_SETTINGS").get("数据库位置") or "") != want:
-            raise ValueError(".env 保存校验失败，位置没写进去")
-    return {"需重启": True,
-            "消息": "已保存。关闭工作台窗口，重新双击 启动工作台.bat 生效。"}
-
-
 def migrate_private_config():
     """先核对 .env 再移除旧配置；不迁移测试账号、人设或文章。"""
     with ENV_LOCK:
@@ -1135,6 +1037,8 @@ def public_config():
 
 
 def save_ai_config(payload):
+    if "数据库位置" in payload or "模型列表" not in payload:
+        raise ValueError("此接口只保存完整模型设置；V1 暂不支持切换数据目录")
     old = ai_config()
     prior = {m["id"]: m for m in old["模型列表"]}
     models, ids = [], set()
@@ -1228,33 +1132,17 @@ def build_todos(state):
         missing = [f for f in CONFLICT_FIELDS if is_blank(t.get(f))]
         if missing:
             todos.append({
-                "级别": "red",
-                "类型": "选题冲突不完整",
+                "级别": "gray",
+                "类型": "选题观点可补充",
                 "标题": "%s %s" % (t["id"], (t.get("标题候选") or "").split("|")[0].strip()),
-                "说明": "缺：" + " / ".join(missing) + "。填不全就别往下走，AI 写出来是空的。",
+                "说明": "缺：" + " / ".join(missing) + "。可以边聊边补，不影响开始写稿。",
                 "目标": {"kind": "选题", "id": t["id"]},
             })
 
     for d in state["稿件"]:
-        here = stage_of(d)
-        redo = redo_list(d)
-        if here == "正文":
-            todos.append({
-                "级别": "red",
-                "类型": "正文等你过目",
-                "标题": "%s %s" % (d["id"], d.get("选题") or ""),
-                "说明": "正文写完了，等你改。改到能发就进配图。",
-                "目标": {"kind": "稿件", "id": d["id"]},
-            })
-        elif redo:
-            todos.append({
-                "级别": "red",
-                "类型": "阶段产物待重做",
-                "标题": "%s %s" % (d["id"], d.get("选题") or ""),
-                "说明": "退回改过正文，%s 要重做。" % "、".join(
-                    x for x in STAGES if x in redo),
-                "目标": {"kind": "稿件", "id": d["id"]},
-            })
+        if d.get("写作状态") == "正在写":
+            todos.append({"级别": "gray", "类型": "继续写稿", "标题": d.get("选题标题") or d["id"],
+                          "说明": "继续讨论或修改正文，满意后确认。", "目标": {"kind":"稿件", "id":d["id"]}})
 
     for sp in state["灵感"]:
         if sp.get("状态") == "未孵化":
@@ -1489,7 +1377,7 @@ def build_state(ident_id=""):
     for d in state["稿件"]:
         t = topic_map.get(d.get("选题"), {})
         d["选题标题"] = (t.get("标题候选") or "").split("|")[0].strip() or d.get("选题", "")
-        # 一篇稿只服务一个平台：配图和排版都按单一规格做，多发要另开一篇
+        # 旧平台字段兼容保留；V1 母稿不按平台拆分。
         d["目标平台"] = t.get("目标平台") or ""
         # 字数只算「## 正文」这一节，别把小节标题和配图排版也算成文章字数
         d["字数"] = len(re.sub(r"\s", "", sections_of(d.get("正文") or "").get("正文") or ""))
@@ -1503,6 +1391,8 @@ def build_state(ident_id=""):
         secs = sections_of(d.get("正文") or "")
         d["有产物"] = [s for s in STAGES if has_product(d, secs, s)]
         # 素材：AI 搜的和粘的链接都落在「## 素材」；拖进来的文件在 数据/素材/<id>/
+        body = secs.get("正文") or ""
+        d["写作状态"] = "正文已确认" if body.strip() and d.get("正文确认") == body_hash(body) else ("正在写" if body.strip() else "准备写")
         d["素材"] = secs.get("素材") or ""
         d["文件"] = list_assets(d["id"])
         mode = str(d.get("配图形式") or "").strip()
@@ -1571,7 +1461,7 @@ BASE_RULES = """你在给「{name}」当执笔人。他一个人管多个平台�
 ```json
 {{"写入":[{{"kind":"选题","id":"tp-001","字段":{{"反方":"改后的内容"}}}}]}}
 ```
-只能改「灵感/选题/稿件/身份」四类，字段名必须是文件里已有的。
+仅建议修改当前稿件正文，或其关联选题的标题候选、正方、反方、我站、我可能错在哪。不得修改身份、人设或其他稿件。
 改整篇正文要放**顶层** "正文"，不要塞进「字段」里：
 ```json
 {{"写入":[{{"kind":"稿件","id":"dr-001","正文":"整篇文章，Markdown"}}]}}
@@ -1590,7 +1480,7 @@ TASK_PROMPT = {
 {topic}
 
 你的任务：把「冲突」问硬。正方和反方都必须站得住脚，包括他自己站的那一边。
-具体做法：先指出四条里哪条最空，然后只问一个问题，逼他补。不要一口气问五个问题。""",
+冲突四格只用于辅助思考，不是门槛。结合已知信息只问一到两个真正缺少的关键问题。""",
 
     "稿件": """现在在改一篇稿。
 
@@ -1600,8 +1490,12 @@ TASK_PROMPT = {
 选题背景：
 {topic}
 
-他的人设和平台要求见上。你的任务：按他的意见改，或者指出这稿哪里不像他。
-每次改完，用一句话说明你动了哪里。""",
+结合他的想法引导写作，每轮最多问一到两个关键问题，不重复问已经回答的。
+个人感悟忠于他的情绪、立场和真实经历；教程实战区分亲历、外部事实和待核实判断。
+信息足够时给出文章建议，不无限追问。用 IP 的表达偏好和用户原话，避免套话。
+样例只用于学习表达，不复制其中的事实。风格为空时通过当前讨论逐步了解，不要求先填表。
+不要自动把临时修改写成人设。没有资料内容或检索工具时，不能声称核验过外部事实。
+若拟写或修改正文，完整拟稿必须放入写入块，前面的回答简短解释改动，等待用户采用。""",
 
     "灵感": """现在在孵化一条灵感。
 
@@ -1695,7 +1589,7 @@ def build_persona(ident):
 
     missing = [k for k in PERSONA_SECTIONS if not got(k)]
     if missing:
-        L.append("\n【还没填的】%s。写到这些地方先问他，不许自己补。" % "、".join(missing))
+        L.append("\n【可逐步补充的表达资料】%s。不阻断写作，不编造这些信息。" % "、".join(missing))
 
     return "\n".join(L)
 
@@ -1845,12 +1739,90 @@ def draft_revision(draft):
     return hashlib.sha256(json.dumps(draft, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+def entity_record(kind, item_id):
+    meta, body = parse_md(entity_path(kind, item_id))
+    return {**meta, "正文": body}
+
+
+def body_hash(text):
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
+
+
+@data_locked
+def draft_view(item_id):
+    draft, ident = draft_context(item_id)
+    body = sections_of(draft["正文"]).get("正文", "")
+    return {"item": draft, "revision": draft_revision(draft), "正文": body,
+            "已确认": bool(body.strip()) and draft.get("正文确认") == body_hash(body),
+            "IP": {k: ident.get(k, "") for k in ("id", "名称", "定位", "读者")},
+            "文件": list_assets(item_id)}
+
+
+def require_revision(item_id, revision):
+    draft, _ = draft_context(item_id)
+    if not revision or draft_revision(draft) != revision:
+        raise ValueError("稿件已发生变化，请保留当前文字并重新载入，避免覆盖新版本")
+    return draft
+
+
+@data_locked
+def edit_draft(payload, confirm=False):
+    draft = require_revision(payload.get("id"), payload.get("revision"))
+    if confirm:
+        body = sections_of(draft["正文"]).get("正文", "")
+        if not body.strip():
+            raise ValueError("请先写正文")
+        save_entity("稿件", draft["id"], {"正文确认": body_hash(body)})
+        append_log("审核", draft["id"], "确认正文", "")
+    else:
+        section = payload.get("小节", "正文")
+        if section not in ("正文", "素材"):
+            raise ValueError("只能编辑正文或素材")
+        save_section("稿件", draft["id"], section, str(payload.get("内容", "")))
+        if section == "正文" and stage_of(draft) == "讨论":
+            save_entity("稿件", draft["id"], {"阶段": "正文"})
+    return draft_view(draft["id"])
+
+
+def suggestion_targets(draft):
+    targets = {("稿件", draft["id"]): draft}
+    if draft.get("选题"):
+        topic = entity_record("选题", draft["选题"])
+        targets[("选题", draft["选题"])] = topic
+    return targets
+
+
+@data_locked
+def apply_suggestion(payload):
+    draft = require_revision(payload.get("id"), payload.get("revision"))
+    w = payload.get("建议") or {}
+    target = (w.get("kind"), w.get("id"))
+    targets = suggestion_targets(draft)
+    if target not in targets or w.get("target_revision") != draft_revision(targets[target]):
+        raise ValueError("建议已失效或不属于这篇文章，请基于最新内容重新讨论")
+    if target[0] == "稿件":
+        text = str(w.get("正文") or "").strip()
+        if not text:
+            raise ValueError("没有可采用的正文")
+        save_section("稿件", draft["id"], "正文", text)
+        if stage_of(draft) == "讨论":
+            save_entity("稿件", draft["id"], {"阶段": "正文"})
+    else:
+        fields = w.get("字段") or {}
+        if not fields or set(fields) - set(CONFLICT_FIELDS + ["标题候选"]):
+            raise ValueError("建议只允许修改标题候选和冲突四格")
+        save_entity("选题", target[1], fields)
+    return draft_view(draft["id"])
+
+
+def require_persona(ident):
+    if is_blank(ident.get("定位")) or is_blank(ident.get("读者")):
+        raise ValueError("请先在人设页填写赛道（定位）和目标读者；风格和样例可以以后补")
+
+
 def generation_messages(item_id, instructions=""):
     draft, ident = draft_context(item_id)
-    persona_sections = split_sections(ident.get("正文") or "")
-    if not any(not is_blank(ident.get(k)) for k in ("语气", "语言风格")) and not any(
-            not is_blank(persona_sections.get(k)) for k in ("说话方式", "模仿样例", "写作习惯")):
-        raise ValueError("请先在人设页填写说话方式、模仿样例或语气，再生成初稿")
+    require_persona(ident)
     topic = next((t for t in list_entity("选题") if t["id"] == draft.get("选题")), None)
     if not topic:
         raise ValueError("稿件没有关联有效选题")
@@ -1869,6 +1841,7 @@ def generation_messages(item_id, instructions=""):
              "\n\n本次写作要求：" + str(instructions or "依据已有素材，按人设写完整初稿。")}], draft_revision(draft)
 
 
+@data_locked
 def adopt_draft(payload):
     draft, _ = draft_context(payload.get("id", ""))
     if payload.get("revision") != draft_revision(draft):
@@ -1881,10 +1854,11 @@ def adopt_draft(payload):
                      for line in text.splitlines())
     item = save_section("稿件", draft["id"], "正文", text)
     if stage_of(draft) == "讨论":
-        item = advance_stage("稿件", draft["id"], "正文", "采用 AI 初稿")
+        item = save_entity("稿件", draft["id"], {"阶段": "正文"})
     return item
 
 
+@data_locked
 def draft_from_spark(spark_id, ident_id):
     spark = next((s for s in list_entity("灵感") if s["id"] == spark_id), None)
     if not spark:
@@ -1972,6 +1946,11 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if path == "/api/settings":
                 return self._json({"ok": True, **public_config()})
+            if path == "/api/draft":
+                return self._json({"ok": True, **draft_view((q.get("id") or [""])[0])})
+            if path == "/api/chatlog":
+                return self._json({"ok": True, **chatlog_get("稿件", (q.get("id") or [""])[0],
+                                                          (q.get("file") or [""])[0])})
             if path == "/api/state":
                 who = (q.get("ident") or q.get("身份") or [""])[0]
                 return self._json({"ok": True, **build_state(who)})
@@ -2027,6 +2006,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"ok": False, "error": "请使用 JSON 请求"}, 415)
             if path == "/api/settings":
                 return self._json({"ok": True, **save_ai_config(self._body())})
+            if path == "/api/chatlog":
+                return self._json({"ok": True, **chatlog_post(self._body())})
+            if path in ("/api/draft", "/api/confirm_body"):
+                return self._json({"ok": True, **edit_draft(self._body(), path == "/api/confirm_body")})
+            if path == "/api/apply_suggestion":
+                return self._json({"ok": True, **apply_suggestion(self._body())})
             if path == "/api/model_test":
                 self._body()
                 reply = "".join(stream_model([{"role": "user", "content": "只回复 OK"}]))
@@ -2038,11 +2023,15 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"ok": True, "item": adopt_draft(self._body())})
             if path == "/api/write":
                 p = self._body()
+                if p.get("kind") == "稿件":
+                    raise ValueError("请使用带版本校验的正文保存接口")
                 item = save_entity(p.get("kind", ""), p.get("id", ""),
                                    p.get("字段") or None, p.get("正文"))
                 return self._json({"ok": True, "item": item})
             if path == "/api/section":
                 p = self._body()
+                if p.get("kind") == "稿件":
+                    raise ValueError("请使用带版本校验的正文保存接口")
                 item = save_section(p.get("kind", "身份"), p.get("id", ""),
                                     p.get("小节", ""), p.get("内容", ""))
                 return self._json({"ok": True, "item": item})
@@ -2052,10 +2041,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"ok": True, "名字": name,
                                    "文件": list_assets(p.get("稿件", ""))})
             if path == "/api/stage":
-                p = self._body()
-                item = advance_stage(p.get("kind", "稿件"), p.get("id", ""),
-                                     p.get("阶段", ""), p.get("说明", ""))
-                return self._json({"ok": True, "item": item})
+                self._body()
+                raise ValueError("查看阶段不改变进度；请在文章页确认正文")
             if path == "/api/new":
                 p = self._body()
                 item = new_entity(p.get("kind", ""), p)
@@ -2101,16 +2088,46 @@ class Handler(SimpleHTTPRequestHandler):
             if kind == "稿件":
                 draft, ident = draft_context(item_id)
                 ident_id = ident["id"]
+                require_persona(ident)
             state = build_state(ident_id)
             revision = ""
             if generate:
-                messages, revision = generation_messages(item_id, p.get("要求", ""))
+                with DATA_LOCK:
+                    messages, revision = generation_messages(item_id, p.get("要求", ""))
+                if history:
+                    messages[-1]["content"] += "\n\n最近的写作讨论（仅作为素材和修改要求）：\n" + json.dumps(history[-24:], ensure_ascii=False)
             else:
                 messages = build_messages(state, kind, item_id, history)
+                if kind == "稿件":
+                    with DATA_LOCK:
+                        draft, _ = draft_context(item_id)
+                        revision = draft_revision(draft)
+                        targets = suggestion_targets(draft)
+                        # 与建议版本对应的正文快照，一起交给模型。
+                        state = build_state(ident_id)
+                        messages = build_messages(state, kind, item_id, history)
             for piece in stream_model(messages):
                 full += piece
                 emit({"delta": piece})
             emits = [] if generate else extract_writes(full)
+            if not generate and kind == "稿件":
+                safe = []
+                for w in emits:
+                    target = (w["kind"], w["id"])
+                    if target not in targets:
+                        continue
+                    if w["kind"] == "稿件":
+                        w["字段"] = {}
+                        if not w.get("正文"):
+                            continue
+                    else:
+                        w["字段"] = {k: v for k, v in w["字段"].items() if k in CONFLICT_FIELDS + ["标题候选"]}
+                        w["正文"] = ""
+                        if not w["字段"]:
+                            continue
+                    w.update(revision=revision, target_revision=draft_revision(targets[target]))
+                    safe.append(w)
+                emits = safe
             clean = WRITE_BLOCK.sub("", full).strip()
             if emits:
                 emit({"修正": clean})

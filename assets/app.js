@@ -211,7 +211,7 @@ function renderSide(state, active){
     <div class="brand">
       <div class="mark">${esc(name.slice(0, 1) || '内')}</div>
       <div>
-        <div class="name">内容矩阵</div>
+        <div class="name">IP 写作工作台</div>
         <div class="sub">${roster.length || 1} 个 IP · ${roster.reduce((n, p) => n + (p['平台'] || []).length, 0) || 0} 个号</div>
       </div>
     </div>
@@ -229,6 +229,7 @@ function renderSide(state, active){
     </div>
     <div class="side-foot">
       ${item('settings', 'settings.html', '设置', '', null)}
+      <button class="btn btn-sm" id="newIp">新建 IP</button>
       <div class="deck" id="deck">
         ${roster.length ? roster.map(deckCard).join('') : '<div class="dc-empty">没读到身份文件</div>'}
         <div class="deck-info" id="deckInfo"></div>
@@ -250,6 +251,7 @@ function renderSide(state, active){
     </div>`;
 
   bindDeck(S);
+  $('#newIp').onclick = createIp;
 }
 
 /* ---------- 卡片栈：悬停看详情，点击切身份 ---------- */
@@ -405,27 +407,6 @@ async function chatStream(kind, id, messages, handlers, options={}){
   throw new Error('连接中断，生成未完成，请重试');
 }
 
-/* ---------- 应用 AI 的修改 ---------- */
-async function applyWrites(writes){
-  let ok = 0, fail = 0;
-  for(const w of writes){
-    try{
-      const fields = w['字段'] || {};
-      if(Object.keys(fields).length){
-        await postJSON('/api/write', {kind: w.kind, id: w.id, '字段': fields});
-        ok++;
-      }
-      if(w['正文'] && w.kind === '稿件'){
-        // 正文走小节接口：只换「## 正文」这一段，素材/配图/排版不会被抹掉
-        await postJSON('/api/section', {kind: '稿件', id: w.id, '小节': '正文', '内容': w['正文']});
-        ok++;
-      }
-      if(!Object.keys(fields).length && !(w['正文'] && w.kind === '稿件')) fail++;
-    }catch(e){ fail++; }
-  }
-  return {ok, fail};
-}
-
 /* ---------- 输入框自适应高度 ---------- */
 function autoGrow(el){
   el.style.height = 'auto';
@@ -443,52 +424,23 @@ function stageAt(d){
   return i < 0 ? 0 : i;
 }
 
-/* 一条稿件的进度条。四格，走过的填红，待重做的描虚线。 */
-function stageBar(d, opts){
-  opts = opts || {};
-  const here = stageAt(d);
-  const redo = d['待重做'] || [];
-  const has = d['有产物'] || [];
+/* V1 只展示正文状态，查看文章不会推进阶段。 */
+function stageBar(d){ return `<span class="chip">${esc(d['写作状态'] || '准备写')}</span>`; }
 
-  const segs = STAGES.map((s, i) => {
-    const cls = ['sg'];
-    if(i < here) cls.push('done');
-    if(i === here) cls.push('now');
-    if(redo.indexOf(s) >= 0) cls.push('redo');
-    if(has.indexOf(s) >= 0) cls.push('has');
-    const tip = STAGE_LABEL[s] + (redo.indexOf(s) >= 0 ? ' · 待重做' : '');
-    const name = opts.labels ? `<b class="sgl">${esc(STAGE_LABEL[s])}</b>` : '';
-    return `<button type="button" class="${cls.join(' ')}" data-s="${s}" title="${esc(tip)}" aria-label="${esc(tip)}"><i></i>${name}</button>`;
-  }).join('');
-
-  let label = '';
-  if(opts.label !== false){
-    label = opts.labels
-      ? `<div class="sn">第 ${here + 1} 格 / 共 ${STAGES.length} 格 · 点任意一格切过去${redo.length ? ' · <b>待重做 ' + redo.length + '</b>' : ''}</div>`
-      : `<div class="sn">${esc(STAGE_LABEL[STAGES[here]] || '')} · ${here + 1}/${STAGES.length}${redo.length ? ' · 待重做 ' + redo.length : ''}</div>`;
-  }
-
-  return `<div class="stage ${opts.labels ? 'lbl' : ''} ${opts.cls || ''}" data-id="${esc(d.id || '')}">
-    <div class="segs">${segs}</div>
-    ${label}
-  </div>`;
-}
-
-/* 点进度条 → 切阶段。往回走时由服务端把下游产物标待重做。 */
-async function setStage(id, stage, note){
-  const r = await postJSON('/api/stage', {kind: '稿件', id, '阶段': stage, '说明': note || ''});
-  return r.item;
-}
-
-/* 给容器里的每格绑点击。handler(stage, index, here) */
-function bindStage(host, d, handler){
-  if(!host || !handler) return;
-  const here = stageAt(d);
-  host.querySelectorAll('.stage .sg').forEach(btn => {
-    btn.addEventListener('click', ev => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      handler(btn.dataset.s, STAGES.indexOf(btn.dataset.s), here);
-    });
-  });
+function createIp(){
+  const dialog=document.createElement('dialog');
+  dialog.style.cssText='margin:auto;padding:24px;border:1px solid #ddd;border-radius:16px;width:min(440px,calc(100vw - 32px))';
+  dialog.innerHTML=`<form><h2 style="font-size:20px;margin-bottom:20px">新建 IP</h2>
+    <label style="display:block">名称<input name="名称" required style="display:block;width:100%;padding:12px;margin:8px 0 16px"></label>
+    <label style="display:block">赛道<input name="定位" required style="display:block;width:100%;padding:12px;margin:8px 0 16px"></label>
+    <label style="display:block">目标读者<input name="读者" required style="display:block;width:100%;padding:12px;margin:8px 0 16px"></label>
+    <p role="status" style="margin:12px 0"></p><button class="btn btn-primary">创建</button> <button class="btn" type="button">取消</button></form>`;
+  document.body.append(dialog);dialog.showModal();
+  dialog.querySelector('[type=button]').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>dialog.remove());
+  dialog.querySelector('form').onsubmit=async e=>{
+    e.preventDefault(); const button=dialog.querySelector('button');button.disabled=true;
+    try{const fields=Object.fromEntries(new FormData(e.target));const r=await postJSON('/api/new',{kind:'身份',...fields});setIdent(r.item.id);location.href='persona.html?id='+encodeURIComponent(r.item.id);}
+    catch(err){dialog.querySelector('[role=status]').textContent=err.message;button.disabled=false;}
+  };
 }

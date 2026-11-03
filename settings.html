@@ -26,26 +26,6 @@
       <p class="settings-note">API Key 仅保存在本机 .env，不纳入 Git。测试会向所选接口发送一条简短请求。</p>
     </form>
 
-    <div class="settings-heading"><h1>数据放哪</h1><p>选题、稿件、对话，全存在本机这一个文件夹里。想挪个盘，在下面换。</p></div>
-    <form id="dbForm">
-      <section class="settings-section">
-        <div class="settings-label"><h2>换个文件夹</h2><p>换完要关掉工作台重新打开才生效。</p></div>
-        <div class="settings-content">
-          <p class="settings-note" id="dbNow">正在读当前位置…</p>
-          <div class="field">
-            <label for="dbPath">新位置</label>
-            <input id="dbPath" placeholder="D:\我的写作数据" spellcheck="false" autocomplete="off">
-          </div>
-          <p class="settings-note">建议选一个空文件夹，路径写到文件夹这一层就行。</p>
-          <label class="config-check"><input type="checkbox" id="dbMove" checked>把现有数据一起搬过去</label>
-          <p class="settings-note">旧位置会原样保留，不会删。</p>
-          <div class="settings-actions">
-            <button class="btn btn-primary" type="submit" id="saveDb">保存位置</button>
-            <span id="dbStatus" role="status" aria-live="polite"></span>
-          </div>
-        </div>
-      </section>
-    </form>
   </div>
 </main></div><div class="toast" id="toast"></div>
 <script src="assets/app.js"></script><script src="assets/settings.js"></script>

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IP 写作工作台 · 结构草案</title><link rel="stylesheet" href="prototype.css"></head>
+<body>
+<div class="notice">结构草案 · 示例内容，仅在当前页面演示，不读写正式稿件，不调用模型。<a href="/">返回现有工作台</a></div>
+<div class="shell">
+  <aside class="sidebar"><a class="brand" href="#home"><svg width="25" height="25" viewBox="0 0 25 25" aria-hidden="true"><path d="M5 19V7h6M14 6h6v12h-6M8 22l9-19" fill="none" stroke="currentColor" stroke-width="2"/></svg>写作工作台</a><nav aria-label="主导航" id="nav"></nav><div class="side-bottom">先把想说的话，写成自己的文章。</div></aside>
+  <div class="workspace"><header class="top"><div id="crumb"></div><span>结构讨论 · 第一步</span></header><main id="main"></main></div>
+</div>
+<dialog id="start"><form id="startForm"><div class="dialog-head"><h2>开始一篇文章</h2><button type="button" id="closeStart" aria-label="关闭">×</button></div><label for="startIp">这篇写给哪个 IP？</label><select id="startIp"></select><label for="idea">你想写什么？</label><textarea id="idea" rows="5" placeholder="一句想法、一段经历，或者还没想明白的问题，都可以。" required></textarea><button class="primary" type="submit">开始聊这篇</button></form></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="prototype.js"></script>
+</body></html>

@@ -30,7 +30,14 @@ class Model(BaseHTTPRequestHandler):
         if self.mode == 'empty':
             self.wfile.write(b'data: [DONE]\n\n')
             return
-        for piece in ('# 临时测试初稿\n\n', '按样例写短句。\n\n### 一个观点\n素材中的事实。'):
+        pieces = ('# 临时测试初稿\n\n', '按样例写短句。\n\n### 一个观点\n素材中的事实。')
+        if self.mode == 'suggestion':
+            pieces = ('建议如下。\n```json\n' + json.dumps({'写入':[
+                {'kind':'稿件','id':'dr-001','正文':'聊天拟写正文'},
+                {'kind':'稿件','id':'dr-999','正文':'不属于当前稿件'},
+                {'kind':'选题','id':'tp-001','字段':{'正方':'有依据的立场','目标身份':'per-02'}}
+            ]},ensure_ascii=False) + '\n```',)
+        for piece in pieces:
             self.wfile.write(('data: ' + json.dumps({'choices':[{'delta':{'content':piece}}]}) + '\n\n').encode())
         if self.mode != 'disconnect':
             reason = 'length' if self.mode == 'length' else 'stop'
@@ -48,14 +55,14 @@ class WorkflowTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.patch = patch.multiple(serve, DATA=str(root), DIRS={k:str(root/k) for k in serve.DIRS},
             SETTINGS=str(root/'设置.json'), LOCAL_CONF=str(root/'本地配置.json'), ENV_FILE=str(root/'.env'),
-            PUB_CSV=str(root/'投放.csv'), LOG_CSV=str(root/'日志.csv'), ASSET_DIR=str(root/'素材'))
+            PUB_CSV=str(root/'投放.csv'), LOG_CSV=str(root/'日志.csv'), ASSET_DIR=str(root/'素材'), CHAT_DIR=str(root/'对话'))
         self.patch.start()
         self.addCleanup(self.patch.stop)
         for path in serve.DIRS.values():
             os.makedirs(path)
-        serve.write_md(str(root/'身份'/'per-01.md'), {'id':'per-01', '名称':'测试身份', '语气':'短句，不说套话'},
+        serve.write_md(str(root/'身份'/'per-01.md'), {'id':'per-01', '名称':'测试身份', '定位':'知识管理', '读者':'写作者', '语气':'短句，不说套话'},
             '## 说话方式\n\n像聊天一样。\n\n## 模仿样例\n\n先试一次，再做判断。\n\n## 写作习惯\n\n先讲事实。', '身份')
-        serve.write_md(str(root/'身份'/'per-02.md'), {'id':'per-02', '名称':'另一个身份', '语气':'长句'}, '', '身份')
+        serve.write_md(str(root/'身份'/'per-02.md'), {'id':'per-02', '名称':'另一个身份', '定位':'阅读', '读者':'学生', '语气':'长句'}, '', '身份')
         self.spark = serve.new_entity('灵感', {'原话':'一个临时测试观点', '身份':'per-01'})
         self.draft = serve.draft_from_spark(self.spark['id'], 'per-01')
         self.model = ThreadingHTTPServer(('127.0.0.1', 0), Model)
@@ -165,11 +172,102 @@ class WorkflowTest(unittest.TestCase):
             self.request('/api/settings', self.config, {'Origin':'https://other.example'})
         self.assertEqual(exc.exception.code, 403)
 
-    def test_missing_style_blocks_generation(self):
+    def test_style_optional_but_audience_required(self):
         serve.save_entity('稿件', self.draft['id'], {'身份':'per-02'})
         serve.save_entity('身份', 'per-02', {'语气':''})
-        with self.assertRaisesRegex(ValueError, '人设页'):
+        serve.generation_messages(self.draft['id'])
+        serve.save_entity('身份', 'per-02', {'读者':''})
+        with self.assertRaisesRegex(ValueError, '目标读者'):
             serve.generation_messages(self.draft['id'])
+
+    def test_body_save_conflict_and_confirmation(self):
+        did=self.draft['id']
+        old=serve.draft_view(did)
+        view=serve.edit_draft({'id':did,'revision':old['revision'],'内容':'我的正文\n\n## 配图\n这是文章内容'})
+        self.assertIn('### 配图', view['正文'])
+        self.assertIn('这是文章内容',view['正文'])
+        with self.assertRaisesRegex(ValueError,'发生变化'):
+            serve.edit_draft({'id':did,'revision':old['revision'],'内容':'旧窗口'})
+        view=serve.edit_draft({'id':did,'revision':view['revision']},confirm=True)
+        self.assertTrue(view['已确认'])
+        view=serve.edit_draft({'id':did,'revision':view['revision'],'内容':'新正文'})
+        self.assertFalse(view['已确认'])
+
+    def test_chat_route_dedup_and_archive(self):
+        did=self.draft['id']
+        msg={'kind':'稿件','id':did,'mode':'append','消息':{'role':'user','content':'我的观点','message_id':'unique'}}
+        self.request('/api/chatlog',msg);self.request('/api/chatlog',msg)
+        view=json.loads(self.request('/api/chatlog?id='+did))
+        self.assertEqual(len(view['对话']),1)
+        self.request('/api/chatlog',{'kind':'稿件','id':did,'mode':'archive'})
+        view=json.loads(self.request('/api/chatlog?id='+did))
+        self.assertEqual(len(view['归档']),1)
+        self.assertEqual(view['对话'],[])
+
+    def test_new_ip_account_scope_and_settings_guard(self):
+        ip=serve.new_entity('身份',{'名称':'新 IP','定位':'编程','读者':'初学者'})
+        account=serve.new_entity('账号',{'身份':ip['id'],'平台':'公众号','账号名':'测试号'})
+        self.assertEqual(account['身份'],ip['id'])
+        before=Path(serve.ENV_FILE).read_bytes()
+        with self.assertRaisesRegex(ValueError,'完整模型设置'):
+            serve.save_ai_config({'数据库位置':'D:/test','搬迁':True})
+        self.assertEqual(Path(serve.ENV_FILE).read_bytes(),before)
+
+    def test_suggestion_scope_revision_and_latest_context(self):
+        did=self.draft['id'];v=serve.draft_view(did)
+        v=serve.edit_draft({'id':did,'revision':v['revision'],'内容':'用户刚修改的句子'})
+        self.request('/api/chat',{'kind':'稿件','id':did,'身份':'per-02','messages':[{'role':'user','content':'看看刚改的'}]})
+        prompt=json.dumps(Model.requests[-1],ensure_ascii=False)
+        self.assertIn('用户刚修改的句子',prompt)
+        self.assertNotIn('另一个身份',prompt)
+        suggestion={'kind':'稿件','id':did,'正文':'拟写内容','target_revision':v['revision']}
+        result=serve.apply_suggestion({'id':did,'revision':v['revision'],'建议':suggestion})
+        self.assertEqual(result['正文'],'拟写内容')
+        with self.assertRaisesRegex(ValueError,'发生变化'):
+            serve.apply_suggestion({'id':did,'revision':v['revision'],'建议':suggestion})
+        suggestion['id']='dr-999'
+        with self.assertRaisesRegex(ValueError,'不属于'):
+            serve.apply_suggestion({'id':did,'revision':result['revision'],'建议':suggestion})
+
+    def test_get_and_old_stage_cannot_mutate_article(self):
+        path=Path(serve.DIRS['稿件'])/(self.draft['id']+'.md')
+        before=path.read_bytes()
+        self.request('/api/draft?id='+self.draft['id'])
+        with self.assertRaises(urllib.error.HTTPError):
+            self.request('/api/stage',{'kind':'稿件','id':self.draft['id'],'阶段':'配图'})
+        self.assertEqual(path.read_bytes(),before)
+
+    def test_chat_suggestions_are_previewed_and_scoped(self):
+        Model.mode='suggestion'
+        did=self.draft['id'];before=serve.draft_view(did)
+        raw=self.request('/api/chat',{'kind':'稿件','id':did,'messages':[{'role':'user','content':'帮我改'}]})
+        done=[json.loads(line[6:]) for line in raw.splitlines() if line.startswith('data: ')][-1]
+        self.assertEqual(len(done['写入']),2)
+        self.assertNotIn('目标身份',done['写入'][1]['字段'])
+        self.assertEqual(serve.draft_view(did)['正文'],before['正文'])
+        for w in done['写入']:
+            self.assertEqual(w['revision'],before['revision'])
+            self.assertTrue(w['target_revision'])
+        result=json.loads(self.request('/api/apply_suggestion',{'id':did,'revision':done['revision'],'建议':done['写入'][0]}))
+        self.assertEqual(result['正文'],'聊天拟写正文')
+
+    def test_concurrent_writers_only_one_wins(self):
+        did=self.draft['id'];revision=serve.draft_view(did)['revision'];results=[]
+        def save(text):
+            try:
+                serve.edit_draft({'id':did,'revision':revision,'内容':text});results.append('ok')
+            except ValueError:
+                results.append('conflict')
+        threads=[threading.Thread(target=save,args=(str(i),)) for i in range(2)]
+        for t in threads:t.start()
+        for t in threads:t.join()
+        self.assertCountEqual(results,['ok','conflict'])
+
+    def test_atomic_save_failure_preserves_file(self):
+        path=Path(serve.DIRS['稿件'])/(self.draft['id']+'.md');before=path.read_bytes()
+        with patch('serve.os.replace',side_effect=OSError('模拟磁盘错误')):
+            with self.assertRaises(OSError):serve.save_section('稿件',self.draft['id'],'正文','不能写入')
+        self.assertEqual(path.read_bytes(),before)
 
     def test_legacy_config_still_works(self):
         Path(serve.ENV_FILE).unlink()

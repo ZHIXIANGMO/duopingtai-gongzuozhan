@@ -135,7 +135,7 @@ function renderGrid(){
       inlineNew(holder, {
         placeholder: plat + ' 账号名…',
         onSubmit: async v => {
-          await postJSON('/api/new', {kind: '账号', '平台': plat, '账号名': v});
+          await postJSON('/api/new', {kind: '账号', '身份': (STATE['当前身份'] || {}).id, '平台': plat, '账号名': v});
           holder.remove();
           STATE = await getJSON(withIdent('/api/state'));
           renderWho();

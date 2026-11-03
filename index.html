@@ -159,17 +159,17 @@ function topicsCard(){
     if(!mine.length){
       return `<div class="hrow topic" data-topic="${esc(t.id)}">
         <span class="hrow-l"><b>${esc(title)}</b>
-          <em class="hsub">${miss.length ? '缺 ' + esc(miss.join('/')) : '冲突齐了'} · 还没开稿</em></span>
-        <span class="hrow-tag chip ${miss.length ? 'wait' : 'ok'}">${miss.length ? '待补' : '可开稿'}</span>
+          <em class="hsub">${miss.length ? '可边聊边补观点' : '观点已整理'} · 还没开稿</em></span>
+        <span class="hrow-tag chip ${miss.length ? 'wait' : 'ok'}">可开稿</span>
       </div>`;
     }
 
     const d = mine[0];
     return `<div class="hrow topic" data-draft="${esc(d.id)}">
       <span class="hrow-l"><b>${esc(title)}</b>
-        <em class="hsub">${esc(d.id)} · ${esc(d['阶段名'] || d['阶段'])} · ${d['字数'] || 0} 字</em></span>
+        <em class="hsub">${esc(d.id)} · ${esc(d['写作状态'] || '准备写')} · ${d['字数'] || 0} 字</em></span>
       <span class="hrow-bar">${stageBar(d, {cls:'sm', label:false})}</span>
-      <span class="hrow-tag chip">${esc(d['阶段'])} ${d['阶段序号']}/${d['阶段总数'] || STAGES.length}</span>
+      <span class="hrow-tag chip">${esc(d['写作状态'] || '准备写')}</span>
     </div>`;
   }).join('');
 

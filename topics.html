@@ -40,14 +40,14 @@
       <div>
         <div class="sec-head" style="margin-top:0">
           <h2>选题库</h2>
-          <span>冲突填不满的排在最前</span>
+          <span>先选一个想写的题，观点可以边聊边补</span>
           <div class="hd-act">
             <button class="btn btn-sm" id="newIdea">＋ 记一条灵感</button>
             <button class="btn btn-sm btn-primary" id="newTopic">＋ 新建选题</button>
           </div>
         </div>
         <div class="topic-list" id="list"></div>
-        <div class="sec-head"><h2>灵感</h2><span>选好人设，直接开稿</span></div>
+        <div class="sec-head"><h2>灵感</h2><span>选好 IP，直接开稿</span></div>
         <div id="sparks"></div>
       </div>
 
@@ -172,7 +172,7 @@ function renderPane(){
       <div class="doc" style="max-height:180px;overflow-y:auto;background:#FAFAFA;border-radius:12px;padding:12px 14px">
         ${bodyText ? renderMd(bodyText) : '<span style="color:#B5B5B5">还没写</span>'}
       </div>
-      <div class="pane-sub" style="margin-top:8px">正文在 Obsidian 里改，或者下拉去工作台跟 AI 聊。</div>
+      <div class="pane-sub" style="margin-top:8px">开稿后可以在文章页补充素材、与 AI 讨论。冲突四格可以边写边补。</div>
 
       ${drafts.length ? `
         <div class="sec-t">衍生稿件 ${drafts.length}</div>
@@ -180,7 +180,7 @@ function renderPane(){
           ${drafts.map(d => `<a class="dr-row" href="draft.html?id=${encodeURIComponent(d.id)}">
             <span class="g">${esc(d.id)} · ${esc(d['选题标题'] || '')}</span>
             <span class="dr-bar">${stageBar(d, {cls:'sm', label:false})}</span>
-            <span class="m">${esc(d['阶段'] || '讨论')} ${d['阶段序号'] || 1}/${d['阶段总数'] || STAGES.length}</span>
+            <span class="m">${esc(d['写作状态'] || '准备写')}</span>
           </a>`).join('')}
         </div>` : ''}
 
