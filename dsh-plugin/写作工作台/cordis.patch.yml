@@ -1,0 +1,5 @@
+- insert:
+    - id: writer-workbench
+      name: '@local/dsh-writer-workbench'
+      config:
+        端口: 8777

@@ -1,0 +1,32 @@
+{
+  "name": "@local/dsh-writer-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "在 Harness 侧边栏打开本机多 IP 写作工作台（选题 → 共同编辑 → 确认正文）。",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  }
+}

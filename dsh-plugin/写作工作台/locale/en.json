@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Writing Workbench",
+    "description": "Opens the local multi-persona writing workbench from the Harness sidebar: topics, co-editing with chat, and body confirmation stay in the original app. No data migration, no key duplication."
+  }
+}
